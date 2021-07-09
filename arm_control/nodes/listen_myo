@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""
+This node is going to attach a table under a px100 robot in rviz. It will also initiates three services to let 
+user control the robot using predefined positions, user specified positions, or stored positions.
+
+SERVICES:
+  + reset (Empty) ~ controls the px100 robot to move a box placed at (0.13, 0.13, 0.125) to (0.13, -0.13, 0.125), and then 
+                        goes back to home position without hitting the box. Provides option to clear a set of stored waypoints.
+"""
+
+import rospy
+import sys
+import tf
+import tf2_ros
+from geometry_msgs.msg import Quaternion, Vector3, PoseStamped, Point, Pose, TransformStamped
+from sensor_msgs.msg import Imu
+from tf.transformations import quaternion_from_euler, quaternion_multiply
+from visualization_msgs.msg import Marker
+from std_msgs.msg import ColorRGBA
+
+class Handler:
+    def __init__(self):
+        self.listener = tf.TransformListener()
+        
+        self.imu__lower_sub = rospy.Subscriber('myo_lower/myo_imu', Imu, self.imu_lower_callback)
+        self.imu__upper_sub = rospy.Subscriber('myo_upper/myo_imu', Imu, self.imu_upper_callback)
+        self.marker_pub = rospy.Publisher("visualization_marker", Marker, queue_size=10)
+        
+
+
+    def imu_upper_callback(self, data):
+        static_broadcaster = tf2_ros.StaticTransformBroadcaster()
+
+        world_body_tf = TransformStamped()
+        world_body_tf.header.stamp = rospy.Time.now()
+        world_body_tf.header.frame_id = "world"
+        world_body_tf.child_frame_id = "body"
+        q_body = quaternion_from_euler(-3.14/2, 0, 0)
+        world_body_tf.transform.rotation.x = q_body[0]
+        world_body_tf.transform.rotation.y = q_body[1]
+        world_body_tf.transform.rotation.z = q_body[2]
+        world_body_tf.transform.rotation.w = q_body[3]
+        static_broadcaster.sendTransform(world_body_tf)
+
+        body_shoulder_tf = TransformStamped()
+        body_shoulder_tf.header.stamp = rospy.Time.now()
+        body_shoulder_tf.header.frame_id = "body"
+        body_shoulder_tf.child_frame_id = "shoulder"
+        q_shoulder = quaternion_from_euler(0, 0, 3.14/2)
+        q = quaternion_multiply(q_shoulder, (data.orientation.x, data.orientation.y, data.orientation.z, data.orientation.w))
+        body_shoulder_tf.transform.translation.x = 0
+        body_shoulder_tf.transform.translation.y = 0
+        body_shoulder_tf.transform.translation.z = 0
+        body_shoulder_tf.transform.rotation.x = q[0]
+        body_shoulder_tf.transform.rotation.y = q[1]
+        body_shoulder_tf.transform.rotation.z = q[2]
+        body_shoulder_tf.transform.rotation.w = q[3]
+        static_broadcaster.sendTransform(body_shoulder_tf)
+        
+        should_upper_tf = TransformStamped()
+        should_upper_tf.header.stamp = rospy.Time.now()
+        should_upper_tf.header.frame_id = "shoulder"
+        should_upper_tf.child_frame_id = "myo_upper"
+
+        should_upper_tf.transform.translation.x = 0
+        should_upper_tf.transform.translation.y = 0
+        should_upper_tf.transform.translation.z = -1
+        should_upper_tf.transform.rotation.w = 1
+        static_broadcaster.sendTransform(should_upper_tf)
+
+        upper_elbow_tf = TransformStamped()
+        upper_elbow_tf.header.stamp = rospy.Time.now()
+        upper_elbow_tf.header.frame_id = "myo_upper"
+        upper_elbow_tf.child_frame_id = "elbow_q"
+        upper_elbow_tf.transform.translation.x = 0
+        upper_elbow_tf.transform.translation.y = 0
+        upper_elbow_tf.transform.translation.z = -1
+        upper_elbow_tf.transform.rotation.w = 1
+        static_broadcaster.sendTransform(upper_elbow_tf)
+
+        upper_elbow_q_tf = TransformStamped()
+        upper_elbow_q_tf.header.stamp = rospy.Time.now()
+        upper_elbow_q_tf.header.frame_id = "elbow_q"
+        upper_elbow_q_tf.child_frame_id = "elbow"
+        upper_elbow_q_tf.transform.rotation.x = q[0]
+        upper_elbow_q_tf.transform.rotation.y = q[1]
+        upper_elbow_q_tf.transform.rotation.z = q[2]
+        upper_elbow_q_tf.transform.rotation.w = -q[3]
+        static_broadcaster.sendTransform(upper_elbow_q_tf)
+
+        marker = Marker()
+        marker.header.stamp = rospy.Time.now()
+        marker.header.frame_id = "myo_upper"
+        marker.color = ColorRGBA(1, 1, 0, 1)
+        marker.type = marker.CYLINDER
+        marker.action = marker.ADD
+        marker.id = 0  # Use different id for each marker to prevent re-drawing the same one
+        marker.pose = Pose(position = Point(0, 0, 0), orientation=Quaternion(0,0,0,1))
+        marker.scale = Vector3(x=0.5, y=0.5, z=2)
+        self.marker_pub.publish(marker)
+
+    def imu_lower_callback(self, data):
+        static_broadcaster = tf2_ros.StaticTransformBroadcaster()
+        elbow_lower_tf = TransformStamped()
+        elbow_lower_tf.header.stamp = rospy.Time.now()
+        elbow_lower_tf.header.frame_id = "elbow"
+        elbow_lower_tf.child_frame_id = "lower_q"
+
+        q_elbow = quaternion_from_euler(0, 0, 3.14/2)
+        q = quaternion_multiply(q_elbow, (data.orientation.x, data.orientation.y, data.orientation.z, data.orientation.w))
+
+        elbow_lower_tf.transform.translation.x = 0
+        elbow_lower_tf.transform.translation.y = 0
+        elbow_lower_tf.transform.translation.z = 0
+        elbow_lower_tf.transform.rotation.x = q[0]
+        elbow_lower_tf.transform.rotation.y = q[1]
+        elbow_lower_tf.transform.rotation.z = q[2]
+        elbow_lower_tf.transform.rotation.w = q[3]
+        static_broadcaster.sendTransform(elbow_lower_tf)
+
+
+        lower_lower_tf = TransformStamped()
+        lower_lower_tf.header.stamp = rospy.Time.now()
+        lower_lower_tf.header.frame_id = "lower_q"
+        lower_lower_tf.child_frame_id = "myo_lower"
+
+        lower_lower_tf.transform.translation.x = 0
+        lower_lower_tf.transform.translation.y = 0
+        lower_lower_tf.transform.translation.z = -1
+        lower_lower_tf.transform.rotation.w = -1
+        static_broadcaster.sendTransform(lower_lower_tf)
+        
+        marker = Marker()
+        marker.header.stamp = rospy.Time.now()
+        marker.header.frame_id = "myo_lower"
+        marker.color = ColorRGBA(1, 1, 0, 1)
+        marker.type = marker.CYLINDER
+        marker.action = marker.ADD
+        marker.id = 1  # Use different id for each marker to prevent re-drawing the same one
+        marker.pose = Pose(position = Point(0, 0, 0), orientation=Quaternion(0,0,0,1))
+        marker.scale = Vector3(x=0.5, y=0.5, z=2)
+        self.marker_pub.publish(marker)
+
+
+def main():
+    """ The main() function. """
+    rospy.init_node('listen_myo')
+    handler = Handler()
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except rospy.ROSInterruptException:
+        pass

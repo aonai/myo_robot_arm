@@ -1,0 +1,16 @@
+<launch>
+  <arg name="use_fake" default="false"/>
+  <arg name="use_actual" default="false"/>
+
+
+  <include file="$(find interbotix_moveit)/launch/interbotix_moveit.launch">
+    <arg name="use_fake" value="true"  if="$(arg use_fake)"/>
+    <arg name="use_actual" value="true"  if="$(arg use_actual)"/>
+    <arg name="robot_name" value="px100"/>
+  </include>
+
+
+  <remap from="joint_states" to="px100/joint_states" />
+  <node name="controller" pkg="arm_control" type="controller" output="screen"/>
+
+</launch>

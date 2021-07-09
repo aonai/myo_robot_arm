@@ -1,0 +1,16 @@
+<launch>
+    <arg name="port_upper" default="/dev/ttyACM0" doc="Port used by the Myo on upper arm" />
+    <arg name="port_lower" default="/dev/ttyACM1" doc="Port used by the Myo on lower arm" />
+
+    <include file="$(find ros_myo)/launch/myo.launch">
+        <arg name="port" value="$(arg port_upper)"/>
+        <arg name="rviz" value="false"/>
+        <arg name="node_name" value="myo_upper"/>   
+    </include>
+
+    <include file="$(find ros_myo)/launch/myo.launch">
+        <arg name="port" value="$(arg port_lower)"/>
+        <arg name="rviz" value="true"/>
+        <arg name="node_name" value="myo_raw"/>        
+    </include>
+</launch>
