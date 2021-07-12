@@ -73,7 +73,7 @@ class Handler:
             print("Disconnected")
 
     def handle_imu(self, event):
-        """ Adopted from https://github.com/uts-magic-lab/ros_myo """
+        """ Adapted from https://github.com/uts-magic-lab/ros_myo """
         if self.imu_val is not None:
             # print("imu = ", self.imu_val)
             myo_id = self.imu_val[0]

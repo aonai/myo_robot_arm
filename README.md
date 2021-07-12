@@ -8,7 +8,7 @@
 ## Packacges
 * `arm_control`: listens to myo emg and imu info and controls the robot
 * `connect_myo`: connects to two myo devices and output result in rviz
-    * This package is an ROS adoption from [MioConnect](https://github.com/francocruces/MioConnect)
+    * This package is an ROS adaption from [MioConnect](https://github.com/francocruces/MioConnect)
     * Relative sources also include [myo-raw](https://github.com/dzhu/myo-raw) and [ros_myo](https://github.com/uts-magic-lab/ros_myo)
 
 ## Instructions
