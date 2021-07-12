@@ -14,7 +14,7 @@ import moveit_commander
 from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import MoveItErrorCodes
 from sensor_msgs.msg import Imu, JointState
-from interbotix_sdk.msg import JointCommands
+from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
 from ros_myo.msg import MyoPose
 
 
@@ -32,36 +32,62 @@ class Handler:
         self.imu_upper = None
         self.gest = 0
         self.joint_state = None
+        self.joint_state_name = None
+        self.first_js = None
         self.robot = moveit_commander.RobotCommander(robot_description='px100/robot_description')
         self.scene = moveit_commander.PlanningSceneInterface(ns='px100')
         self.group = moveit_commander.MoveGroupCommander("interbotix_arm", robot_description='px100/robot_description', ns='px100')
         self.gripper_group = moveit_commander.MoveGroupCommander("interbotix_gripper", robot_description='px100/robot_description', ns='px100')
 
-        self.group.set_named_target("Home")
-        self.group.go(wait=True)
-        self.group.stop()
+        # self.group.set_named_target("Home")
+        # self.group.go(wait=True)
+        # self.group.stop()
 
         self.add_table()
-        self.imu__lower_sub = rospy.Subscriber('myo_raw/myo_imu', Imu, self.imu_lower_callback)
-        self.imu__upper_sub = rospy.Subscriber('myo_upper/myo_imu', Imu, self.imu_upper_callback)
-        self.gest_sub = rospy.Subscriber("myo_raw/myo_gest", MyoPose, self.gest_callback)
-        self.cmd_pub = rospy.Publisher('px100/joint/commands', JointCommands, queue_size = 10)
+        # self.imu__lower_sub = rospy.Subscriber('myo_raw/myo_imu', Imu, self.imu_lower_callback)
+        # self.imu__upper_sub = rospy.Subscriber('myo_upper/myo_imu', Imu, self.imu_upper_callback)
+        # self.gest_sub = rospy.Subscriber("myo_raw/myo_gest", MyoPose, self.gest_callback)
+        # self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 10)
+        self.cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 10)
         self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
 
-        self.rate = rospy.Rate(1) 
+        rospy.Timer(rospy.Duration(0.5), self.test_arm) 
 
-        while not rospy.is_shutdown(): 
-            current_joints = self.group.get_current_joint_values()
-            target = current_joints.copy()
-            target[0] += 0.1
-            self.group.set_joint_value_target(target)
-            self.execute_path() 
+        # while not rospy.is_shutdown(): 
+    def test_arm(self, event):
+        # moveit commands
+        # current_joints = self.group.get_current_joint_values()
+        # print("current_joints = ", current_joints)
+        # target = current_joints.copy()
+        # target[0] += 0.1
+        # self.group.set_joint_value_target(target)
+        # self.execute_path() 
 
-            # if self.joint_state is not None:
-            #     cmd_msg = JointCommands()
-            #     cmd_msg.cmd = self.joint_state.copy()
-            #     cmd_msg.cmd[0] += 0.1
-            #     self.cmd_pub.publish(cmd_msg)
+        # if self.joint_state is not None:
+        #     cmd_msg = JointGroupCommand()
+        #     cmd_msg.name = 'arm'
+        #     # cmd_msg.cmd = self.joint_state[:4].copy()
+        #     cmd_msg.cmd = self.first_js[:4].copy()
+        #     print("initial = ", self.first_js)
+        #     cmd_msg.cmd[0] = self.joint_state[0] + 0.1
+        #     print("command = ", cmd_msg.cmd)
+        #     self.cmd_pub.publish(cmd_msg)
+
+        if self.joint_state is not None:
+            cmd_msg = JointSingleCommand()
+            idx = 0
+            cmd_msg.name = self.joint_state_name[idx]
+            print("JS = ", self.joint_state)
+            cmd_msg.cmd = self.joint_state[idx] + 0.1
+            print("command 1 = ", cmd_msg)
+            self.cmd_pub.publish(cmd_msg)
+
+            # cmd_msg = JointSingleCommand()
+            # idx = 1
+            # cmd_msg.name = self.joint_state_name[idx]
+            # cmd_msg.cmd = self.joint_state[idx] + 0.1
+            # print("command 2 = ", cmd_msg)
+            # self.cmd_pub.publish(cmd_msg)
 
         # while(True):
         #     if self.imu_lower is not None and self.imu_upper is not None:
@@ -108,15 +134,18 @@ class Handler:
     def joint_callback(self, data):
         self.joint_state = list(data.position)
         # rospy.loginfo(f"joints = {self.joint_state}")
-
+        if self.first_js is None:
+            self.first_js = list(self.joint_state)
+            self.joint_state_name = list(data.name)
+            print("name = ", self.joint_state_name)
 
     def execute_path(self):
         """ helper function for executing planned path in move group """ 
-        rospy.logdebug("Execute plan")
+        # rospy.logdebug("Execute plan")
         (result, plan, frac, errCode) = self.group.plan()
         
-        rospy.loginfo(f"err code = {errCode}")
-        rospy.loginfo(f"plan = {plan}")
+        # rospy.loginfo(f"err code = {errCode}")
+        # rospy.loginfo(f"plan = {plan}")
         result = self.group.execute(plan, wait=True)
         self.group.stop()
         self.group.clear_pose_targets()

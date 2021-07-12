@@ -2,11 +2,11 @@
   <arg name="use_fake" default="false"/>
   <arg name="use_actual" default="false"/>
 
-
-  <include file="$(find interbotix_moveit)/launch/interbotix_moveit.launch">
+  <include file="$(find interbotix_xsarm_moveit)/launch/xsarm_moveit.launch">
     <arg name="use_fake" value="true"  if="$(arg use_fake)"/>
     <arg name="use_actual" value="true"  if="$(arg use_actual)"/>
-    <arg name="robot_name" value="px100"/>
+    <arg name="robot_model" value="px100"/>
+    <arg name="dof" value="4"/>
   </include>
 
 

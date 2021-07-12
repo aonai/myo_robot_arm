@@ -22,8 +22,8 @@ class Handler:
     def __init__(self):
         self.listener = tf.TransformListener()
         
-        self.imu__lower_sub = rospy.Subscriber('myo_lower/myo_imu', Imu, self.imu_lower_callback)
-        self.imu__upper_sub = rospy.Subscriber('myo_upper/myo_imu', Imu, self.imu_upper_callback)
+        self.imu_lower_sub = rospy.Subscriber('myo_lower/pose', PoseStamped, self.imu_lower_callback)
+        self.imu_upper_sub = rospy.Subscriber('myo_upper/pose', PoseStamped, self.imu_upper_callback)
         self.marker_pub = rospy.Publisher("visualization_marker", Marker, queue_size=10)
         
 
@@ -35,7 +35,7 @@ class Handler:
         world_body_tf.header.stamp = rospy.Time.now()
         world_body_tf.header.frame_id = "world"
         world_body_tf.child_frame_id = "body"
-        q_body = quaternion_from_euler(-3.14/2, 0, 0)
+        q_body = quaternion_from_euler(0, 0, 0)
         world_body_tf.transform.rotation.x = q_body[0]
         world_body_tf.transform.rotation.y = q_body[1]
         world_body_tf.transform.rotation.z = q_body[2]
@@ -46,8 +46,8 @@ class Handler:
         body_shoulder_tf.header.stamp = rospy.Time.now()
         body_shoulder_tf.header.frame_id = "body"
         body_shoulder_tf.child_frame_id = "shoulder"
-        q_shoulder = quaternion_from_euler(0, 0, 3.14/2)
-        q = quaternion_multiply(q_shoulder, (data.orientation.x, data.orientation.y, data.orientation.z, data.orientation.w))
+        q_shoulder = quaternion_from_euler(0, 0, 0)
+        q = quaternion_multiply(q_shoulder, (data.pose.orientation.x, data.pose.orientation.y, data.pose.orientation.z, data.pose.orientation.w))
         body_shoulder_tf.transform.translation.x = 0
         body_shoulder_tf.transform.translation.y = 0
         body_shoulder_tf.transform.translation.z = 0
@@ -106,8 +106,8 @@ class Handler:
         elbow_lower_tf.header.frame_id = "elbow"
         elbow_lower_tf.child_frame_id = "lower_q"
 
-        q_elbow = quaternion_from_euler(0, 0, 3.14/2)
-        q = quaternion_multiply(q_elbow, (data.orientation.x, data.orientation.y, data.orientation.z, data.orientation.w))
+        q_elbow = quaternion_from_euler(0, 0, 0)
+        q = quaternion_multiply(q_elbow, (data.pose.orientation.x, data.pose.orientation.y, data.pose.orientation.z, data.pose.orientation.w))
 
         elbow_lower_tf.transform.translation.x = 0
         elbow_lower_tf.transform.translation.y = 0
