@@ -2,8 +2,9 @@
 from connect_myo.myodriver import MyoDriver
 from connect_myo.config import Config
 import serial
+import struct
 from math import sqrt, degrees
-from tf.transformations import euler_from_quaternion
+from tf.transformations import quaternion_from_euler, quaternion_multiply, euler_from_quaternion
 import rospy
 from geometry_msgs.msg import Quaternion, Vector3, PoseStamped, Point, Pose
 from sensor_msgs.msg import Imu
@@ -14,6 +15,10 @@ class Handler:
         # Run
         self.config = Config()
         self.num_myo = rospy.get_param('num_myo')
+        # self.myo_lower_address = rospy.get_param('myo_lower_address')
+        # self.myo_upper_address = rospy.get_param('myo_upper_address')
+        # self.myo_lower_address = struct.pack('6B', *self.myo_lower_address)
+        # self.myo_upper_address = struct.pack('6B', *self.myo_upper_address)
         self.config.MYO_AMOUNT = self.num_myo
         self.myo_driver = None
         self.emg_val = None
@@ -21,6 +26,8 @@ class Handler:
 
         # ROS Params
         self.myo_name = rospy.get_param('myo_name')
+        rospy.Timer(rospy.Duration(0.5), self.check_myo) 
+
         self.imuPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_imu', Imu, queue_size=1),
                         rospy.Publisher(f'{self.myo_name[1]}/myo_imu', Imu, queue_size=1)]
         self.oriPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori', Vector3, queue_size=1),
@@ -72,11 +79,24 @@ class Handler:
                     self.myo_driver.disconnect_all()
             print("Disconnected")
 
+    def check_myo(self, event):
+        self.myo_name = rospy.get_param('myo_name')
+        self.imuPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_imu', Imu, queue_size=1),
+                        rospy.Publisher(f'{self.myo_name[1]}/myo_imu', Imu, queue_size=1)]
+        self.oriPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori', Vector3, queue_size=1),
+                       rospy.Publisher(f'{self.myo_name[1]}/myo_ori', Vector3, queue_size=1)]
+        self.oriDegPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori_deg', Vector3, queue_size=1),
+                          rospy.Publisher(f'{self.myo_name[1]}/myo_ori_deg', Vector3, queue_size=1)]
+        self.posePub = [rospy.Publisher(f'{self.myo_name[0]}/pose', PoseStamped, queue_size=1),
+                        rospy.Publisher(f'{self.myo_name[1]}/pose', PoseStamped, queue_size=1)]
+        self.emgPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_emg', Float32MultiArray, queue_size=1),
+                       rospy.Publisher(f'{self.myo_name[1]}/myo_emg', Float32MultiArray, queue_size=1)]
+
     def handle_imu(self, event):
         """ Adapted from https://github.com/uts-magic-lab/ros_myo """
         if self.imu_val is not None:
             # print("imu = ", self.imu_val)
-            myo_id = self.imu_val[0]
+            myo_idx = self.imu_val[0]
             quat1 = self.imu_val[1]
             quat = []
             for q in quat1:
@@ -110,10 +130,10 @@ class Handler:
                                                     normQuat.y,
                                                     normQuat.z,
                                                     normQuat.w])
-            self.imuPub[myo_id].publish(imu)
-            self.oriPub[myo_id].publish(Vector3(roll, pitch, yaw))
-            self.oriDegPub[myo_id].publish(Vector3(degrees(roll), degrees(pitch), degrees(yaw)))
-            self.posePub[myo_id].publish(PoseStamped(h,Pose(Point(0.0,0.0,0.0),normQuat)) )
+            self.imuPub[myo_idx].publish(imu)
+            self.oriPub[myo_idx].publish(Vector3(roll, pitch, yaw))
+            self.oriDegPub[myo_idx].publish(Vector3(degrees(roll), degrees(pitch), degrees(yaw)))
+            self.posePub[myo_idx].publish(PoseStamped(h,Pose(Point(0.0,0.0,0.0),normQuat)) )
 
 
     def handle_emg(self, event):
@@ -121,8 +141,8 @@ class Handler:
             # print("emg = ", self.emg_val)
             msg = Float32MultiArray()
             msg.data = self.emg_val[1]
-            myo_id = self.emg_val[0]
-            self.emgPub[myo_id].publish(msg)
+            myo_idx = self.emg_val[0]
+            self.emgPub[myo_idx].publish(msg)
 
 
 def main():

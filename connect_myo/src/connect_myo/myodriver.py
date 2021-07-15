@@ -4,6 +4,7 @@ from connect_myo.public.myohw import *
 from connect_myo.myo import Myo
 from connect_myo.bluetooth import Bluetooth
 from connect_myo.data_handler import DataHandler
+import struct
 
 
 class MyoDriver:
@@ -12,6 +13,7 @@ class MyoDriver:
     """
     def __init__(self, config):
         self.config = config
+        self.addr_to_connect = None
 
         self.data_handler = DataHandler(self.config)
         self.bluetooth = Bluetooth(self.config.MESSAGE_DELAY)
@@ -121,7 +123,7 @@ class MyoDriver:
         # Enable data and subscribe
         self.bluetooth.enable_data(myo_to_connect.connection_id, self.config)
 
-        print("Myo ready", myo_to_connect.connection_id, myo_to_connect.address)
+        print("Myo ready", myo_to_connect.connection_id, struct.unpack('6B', myo_to_connect.address))
         print()
         return True
 
@@ -137,11 +139,24 @@ class MyoDriver:
         if self.scanning and not self.myo_to_connect:
             self._print_status("Device found", payload['sender'])
             if payload['data'].endswith(bytes(Final.myo_id)):
+                # if not self._has_paired_with(payload['sender']) and self._need_to_connect(payload['sender']):
                 if not self._has_paired_with(payload['sender']):
                     self.myo_to_connect = Myo(payload['sender'])
                     self._print_status("Myo found", self.myo_to_connect.address)
                     self._print_status()
                     self.scanning = False
+
+    def _need_to_connect(self, address):
+        """
+        Checks if given address is the one want to connect 
+        :param address: address to connect 
+        :return: True if it is. False otherwise
+        """
+        print("Connecting myo", len(self.myos), " at ", address, " ---> ", self.addr_to_connect[len(self.myos)])
+        if address == self.addr_to_connect[len(self.myos)]:
+            return True
+        return False
+
 
     def _has_paired_with(self, address):
         """
@@ -197,6 +212,7 @@ class MyoDriver:
                 self._print_status("Connection status: ", payload)
                 myo.set_connected(True)
                 myo.set_id(payload['connection'])
+                # myo.set_id(len(self.myos)-1)
                 self._print_status("Connected with id", myo.connection_id)
 
         return handle_connection_status

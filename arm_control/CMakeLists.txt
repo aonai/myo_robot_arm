@@ -10,7 +10,9 @@ project(arm_control)
 find_package(catkin REQUIRED COMPONENTS 
     geometry_msgs
     rospy
+    sensor_msgs
     std_msgs
+    visualization_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -109,7 +111,9 @@ catkin_package(
 #  DEPENDS system_lib
     CATKIN_DEPENDS geometry_msgs
     CATKIN_DEPENDS rospy
+    CATKIN_DEPENDS sensor_msgs
     CATKIN_DEPENDS std_msgs
+    CATKIN_DEPENDS visualization_msgs
 )
 
 ###########

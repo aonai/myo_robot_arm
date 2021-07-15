@@ -6,7 +6,8 @@
   <arg name="rviz" default="true" doc="rviz visualization or not"/>
   <arg name="node_name" default="myo_raw"/>
 
-  <rosparam param="myo_name">['myo_lower', 'myo_upper']</rosparam>
+  <rosparam param="myo_name">['myo_upper', 'myo_lower']</rosparam>
+  <!-- <rosparam param="myo_name">['myo_lower', 'myo_upper']</rosparam> -->
   <rosparam param="num_myo">2</rosparam>
 
   <!-- myo ros node -->

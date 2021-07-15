@@ -56,12 +56,12 @@ class Handler:
         # while not rospy.is_shutdown(): 
     def test_arm(self, event):
         # moveit commands
-        # current_joints = self.group.get_current_joint_values()
-        # print("current_joints = ", current_joints)
-        # target = current_joints.copy()
-        # target[0] += 0.1
-        # self.group.set_joint_value_target(target)
-        # self.execute_path() 
+        current_joints = self.group.get_current_joint_values()
+        print("current_joints = ", current_joints)
+        target = current_joints.copy()
+        target[0] += 0.1
+        self.group.set_joint_value_target(target)
+        self.execute_path() 
 
         # if self.joint_state is not None:
         #     cmd_msg = JointGroupCommand()
@@ -73,14 +73,14 @@ class Handler:
         #     print("command = ", cmd_msg.cmd)
         #     self.cmd_pub.publish(cmd_msg)
 
-        if self.joint_state is not None:
-            cmd_msg = JointSingleCommand()
-            idx = 0
-            cmd_msg.name = self.joint_state_name[idx]
-            print("JS = ", self.joint_state)
-            cmd_msg.cmd = self.joint_state[idx] + 0.1
-            print("command 1 = ", cmd_msg)
-            self.cmd_pub.publish(cmd_msg)
+        # if self.joint_state is not None:
+        #     cmd_msg = JointSingleCommand()
+        #     idx = 0
+        #     cmd_msg.name = self.joint_state_name[idx]
+        #     print("JS = ", self.joint_state)
+        #     cmd_msg.cmd = self.joint_state[idx] + 0.1
+        #     print("command 1 = ", cmd_msg)
+        #     self.cmd_pub.publish(cmd_msg)
 
             # cmd_msg = JointSingleCommand()
             # idx = 1
@@ -145,7 +145,7 @@ class Handler:
         (result, plan, frac, errCode) = self.group.plan()
         
         # rospy.loginfo(f"err code = {errCode}")
-        # rospy.loginfo(f"plan = {plan}")
+        rospy.loginfo(f"plan = {plan}")
         result = self.group.execute(plan, wait=True)
         self.group.stop()
         self.group.clear_pose_targets()
