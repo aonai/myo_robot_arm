@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+import sys
+import rospy
+import tf
+from tf.transformations import euler_from_quaternion
+import tf2_ros
+import moveit_commander
+from geometry_msgs.msg import PoseStamped, Pose
+from moveit_msgs.msg import MoveItErrorCodes
+from sensor_msgs.msg import Imu, JointState
+from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
+from std_msgs.msg import Int16
+import enum, math
+
+class Pose(enum.Enum):
+    REST = 0
+    FIST = 1
+    WAVE_IN = 2
+    WAVE_OUT = 3
+    FINGERS_SPREAD = 4
+    THUMB_TO_PINKY = 5
+    UNKNOWN = 255
+
+class Handler:
+    def __init__(self):
+
+        self.listener = tf.TransformListener()
+        self.PI = 3.1415926
+        self.joint_state = None
+        self.waist_rpy = [0, 0, 0]
+        self.gest = Pose.REST
+        self.pub_group_cmd = True
+
+        self.errCode = MoveItErrorCodes.FAILURE 
+        self.joint_state = None
+        self.joint_state_name = None
+        self.first_js = None
+        self.robot = moveit_commander.RobotCommander(robot_description='px100/robot_description', ns='px100')
+        self.scene = moveit_commander.PlanningSceneInterface(ns='px100')
+        self.group = moveit_commander.MoveGroupCommander("interbotix_arm", robot_description='px100/robot_description', ns='px100')
+        self.gripper_group = moveit_commander.MoveGroupCommander("interbotix_gripper", robot_description='px100/robot_description', ns='px100')
+        
+        self.group.set_named_target("Home")
+        self.group.go(wait=True)
+        self.group.stop()
+
+        self.add_table()
+        self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 10)
+        self.single_cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 10)
+        self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
+        self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
+
+        rospy.Timer(rospy.Duration(0.5), self.listen_tf) 
+        rospy.Timer(rospy.Duration(0.5), self.pub_cmd) 
+
+    def gest_callback(self, data):
+        print("myo_lower gest = ", Pose(data.data))
+        # print("name = ", self.joint_state_name)
+
+        self.gest = Pose(data.data)
+        if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
+            self.pub_group_cmd = True
+        else: 
+            self.pub_group_cmd = False
+
+
+    def pub_cmd(self, event):
+        if self.pub_group_cmd:
+            current_joints = self.group.get_current_joint_values()
+            print("current_joints = ", current_joints)
+            print("waist_rpy = ", self.waist_rpy)
+            print("shoulder_rpy = ", self.shoulder_rpy)
+            print("elbow_rpy = ", self.elbow_rpy)
+            target = current_joints.copy()
+            target[0] = self.waist_rpy[2]
+            target[1] = self.shoulder_rpy[1] 
+            target[2] = math.sqrt(self.elbow_rpy[1]**2 + self.elbow_rpy[2]**2)
+
+            if target[2] > 92*self.PI/180:
+                target[2] = 80*self.PI/180
+                print("elbow max")
+            elif target[2] < -121*self.PI/180:
+                target[2] = -100*self.PI/180
+                print("elbow min")
+            print("target = ", target)
+            self.group.set_joint_value_target(target)
+            self.execute_path() 
+        else:
+            if self.gest == Pose.WAVE_OUT or self.gest == Pose.WAVE_IN:
+                k = 1 if self.gest == Pose.WAVE_IN else -1            
+                cmd_msg = JointSingleCommand()
+                cmd_msg.name = self.joint_state_name[3]
+                print("JS = ", self.joint_state)
+                cmd_msg.cmd = self.joint_state[3] + 0.1*k
+                print("command 1 = ", cmd_msg)
+                self.single_cmd_pub.publish(cmd_msg)
+            elif self.gest == Pose.THUMB_TO_PINKY:
+                self.gripper_group.set_named_target("Closed")
+                self.gripper_group.go(wait=True)
+                self.group.stop()
+                self.group.clear_pose_targets()
+            elif self.gest == Pose.FIST:
+                self.gripper_group.set_named_target("Open")
+                self.gripper_group.go(wait=True)
+                self.group.stop()
+                self.group.clear_pose_targets()
+
+    def listen_tf(self, event): 
+        try:
+            (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
+            self.waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+            
+            (trans, rot) = self.listener.lookupTransform('body', 'myo_upper', rospy.Time(0))
+            self.shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                        
+            (trans, rot) = self.listener.lookupTransform('elbow', 'myo_lower', rospy.Time(0))
+            self.elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass
+
+
+    def add_table(self):
+        """ Adds a table to the scene and display in rviz """
+        rospy.sleep(0.5)
+        p = PoseStamped()
+        p.header.frame_id = "world"
+        p.pose.position.z = -0.025
+        self.scene.add_box("table", p, (1, 1, 0.05))
+
+
+    def execute_path(self):
+        """ helper function for executing planned path in move group """ 
+        # rospy.logdebug("Execute plan")
+        (result, plan, frac, errCode) = self.group.plan()
+        
+        # rospy.loginfo(f"err code = {errCode}")
+        # rospy.loginfo(f"plan = {plan}")
+        result = self.group.execute(plan, wait=True)
+        self.group.stop()
+        self.group.clear_pose_targets()
+
+    def joint_callback(self, data):
+        self.joint_state = list(data.position)
+        # rospy.loginfo(f"joints = {self.joint_state}")
+        if self.first_js is None:
+            self.first_js = list(self.joint_state)
+            self.joint_state_name = list(data.name)
+            # print("name = ", self.joint_state_name)
+
+def main():
+    """ The main() function. """
+    rospy.init_node('control_robot')
+    handler = Handler()
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except rospy.ROSInterruptException:
+        pass
