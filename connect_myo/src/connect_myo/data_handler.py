@@ -10,6 +10,14 @@ class DataHandler:
         # self.osc = udp_client.SimpleUDPClient(config.OSC_ADDRESS, config.OSC_PORT)
         self.printEmg = config.PRINT_EMG
         self.printImu = config.PRINT_IMU
+        self.printGest = config.PRINT_GEST
+    
+    def handle_gest(self, payload):
+        val = struct.unpack('6B',  payload['value'])
+        if self.printGest:
+            print("gest", payload['connection'], payload['atthandle'], val)
+        return payload['connection'], val
+
 
     def handle_emg(self, payload):
         """

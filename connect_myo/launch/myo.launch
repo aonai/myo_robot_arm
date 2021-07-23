@@ -16,7 +16,7 @@
   <!--visualization-->
   <group if="$(arg rviz)">
       <node
-          name="rviz"
+          name="rviz_myo"
           pkg="rviz"
           type="rviz"
           args="-d $(find connect_myo)/config/rviz_display.rviz"> 

@@ -83,6 +83,7 @@ class ServiceHandles:
 
     # ClassifierService
     ClassifierEventCharacteristic = 0x0023
+    ClassifierEventDescriptor = 0x24
 
     EmgData0Characteristic = 0x2b
     EmgData1Characteristic = 0x2e

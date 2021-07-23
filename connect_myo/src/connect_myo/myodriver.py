@@ -25,6 +25,7 @@ class MyoDriver:
 
         self.emg_val = None
         self.imu_val = None
+        self.gest_val = None
 
         # Add handlers for expected events
         self.set_handlers()
@@ -235,6 +236,9 @@ class MyoDriver:
             ServiceHandles.FirmwareVersionCharacteristic,
             ServiceHandles.BatteryCharacteristic
         ]
+        gest_handles = [
+            ServiceHandles.ClassifierEventCharacteristic
+        ]
 
         # Delegate EMG
         if payload['atthandle'] in emg_handles:
@@ -245,6 +249,8 @@ class MyoDriver:
             self.imu_val = self.data_handler.handle_imu(payload)
 
         # TODO: Delegate classifier
+        elif payload['atthandle'] in gest_handles:
+            self.gest_val = self.data_handler.handle_gest(payload)
 
         # Delegate myo info
         elif payload['atthandle'] in myo_info_handles:
@@ -330,3 +336,6 @@ class MyoDriver:
     
     def get_imu(self):
         return self.imu_val
+    
+    def get_gest(self):
+        return self.gest_val

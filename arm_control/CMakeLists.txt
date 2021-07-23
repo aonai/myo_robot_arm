@@ -169,6 +169,7 @@ include_directories(
 catkin_install_python(PROGRAMS
   nodes/controller
   nodes/listen_myo
+  nodes/control_robot
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

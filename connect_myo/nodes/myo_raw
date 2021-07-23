@@ -8,7 +8,7 @@ from tf.transformations import quaternion_from_euler, quaternion_multiply, euler
 import rospy
 from geometry_msgs.msg import Quaternion, Vector3, PoseStamped, Point, Pose
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Header, Float32MultiArray
+from std_msgs.msg import Header, Float32MultiArray, Int16
 
 class Handler:
     def __init__(self):
@@ -23,11 +23,10 @@ class Handler:
         self.myo_driver = None
         self.emg_val = None
         self.imu_val = None
+        self.gest_val = None
 
         # ROS Params
         self.myo_name = rospy.get_param('myo_name')
-        rospy.Timer(rospy.Duration(0.5), self.check_myo) 
-
         self.imuPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_imu', Imu, queue_size=1),
                         rospy.Publisher(f'{self.myo_name[1]}/myo_imu', Imu, queue_size=1)]
         self.oriPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori', Vector3, queue_size=1),
@@ -38,10 +37,13 @@ class Handler:
                         rospy.Publisher(f'{self.myo_name[1]}/pose', PoseStamped, queue_size=1)]
         self.emgPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_emg', Float32MultiArray, queue_size=1),
                        rospy.Publisher(f'{self.myo_name[1]}/myo_emg', Float32MultiArray, queue_size=1)]
-
+        self.gestPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_gest', Int16, queue_size=1),
+                       rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
+        
+        rospy.Timer(rospy.Duration(0.5), self.check_myo) 
         rospy.Timer(rospy.Duration(1/50), self.handle_imu) 
+        rospy.Timer(rospy.Duration(1/50), self.handle_gest) 
         rospy.Timer(rospy.Duration(1/200), self.handle_emg) 
-
         try:
             # Init
             self.myo_driver = MyoDriver(self.config)
@@ -61,6 +63,7 @@ class Handler:
                 self.myo_driver.receive()
                 self.emg_val = self.myo_driver.get_emg()
                 self.imu_val = self.myo_driver.get_imu()
+                self.gest_val = self.myo_driver.get_gest()
 
 
 
@@ -80,18 +83,22 @@ class Handler:
             print("Disconnected")
 
     def check_myo(self, event):
-        self.myo_name = rospy.get_param('myo_name')
-        self.imuPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_imu', Imu, queue_size=1),
-                        rospy.Publisher(f'{self.myo_name[1]}/myo_imu', Imu, queue_size=1)]
-        self.oriPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori', Vector3, queue_size=1),
-                       rospy.Publisher(f'{self.myo_name[1]}/myo_ori', Vector3, queue_size=1)]
-        self.oriDegPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori_deg', Vector3, queue_size=1),
-                          rospy.Publisher(f'{self.myo_name[1]}/myo_ori_deg', Vector3, queue_size=1)]
-        self.posePub = [rospy.Publisher(f'{self.myo_name[0]}/pose', PoseStamped, queue_size=1),
-                        rospy.Publisher(f'{self.myo_name[1]}/pose', PoseStamped, queue_size=1)]
-        self.emgPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_emg', Float32MultiArray, queue_size=1),
-                       rospy.Publisher(f'{self.myo_name[1]}/myo_emg', Float32MultiArray, queue_size=1)]
-
+        if not self.myo_name == rospy.get_param('myo_name'):
+            print("Switch upper and lower arm")
+            self.myo_name = rospy.get_param('myo_name')
+            self.imuPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_imu', Imu, queue_size=1),
+                            rospy.Publisher(f'{self.myo_name[1]}/myo_imu', Imu, queue_size=1)]
+            self.oriPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori', Vector3, queue_size=1),
+                        rospy.Publisher(f'{self.myo_name[1]}/myo_ori', Vector3, queue_size=1)]
+            self.oriDegPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_ori_deg', Vector3, queue_size=1),
+                            rospy.Publisher(f'{self.myo_name[1]}/myo_ori_deg', Vector3, queue_size=1)]
+            self.posePub = [rospy.Publisher(f'{self.myo_name[0]}/pose', PoseStamped, queue_size=1),
+                            rospy.Publisher(f'{self.myo_name[1]}/pose', PoseStamped, queue_size=1)]
+            self.emgPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_emg', Float32MultiArray, queue_size=1),
+                        rospy.Publisher(f'{self.myo_name[1]}/myo_emg', Float32MultiArray, queue_size=1)]
+            self.gestPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_gest', Int16, queue_size=1),
+                        rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
+ 
     def handle_imu(self, event):
         """ Adapted from https://github.com/uts-magic-lab/ros_myo """
         if self.imu_val is not None:
@@ -143,6 +150,14 @@ class Handler:
             msg.data = self.emg_val[1]
             myo_idx = self.emg_val[0]
             self.emgPub[myo_idx].publish(msg)
+    
+    def handle_gest(self, event):
+        if self.gest_val is not None:
+            print("gest = ", self.gest_val)
+            msg = Int16()
+            msg.data = self.gest_val[1][1]  # myo bluetooth config for classifier is type, val, xdir, _, _, _
+            myo_idx = self.gest_val[0]
+            self.gestPub[myo_idx].publish(msg)
 
 
 def main():

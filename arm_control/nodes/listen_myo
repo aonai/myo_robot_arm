@@ -21,8 +21,6 @@ from std_srvs.srv import SetBool
 
 class Handler:
     def __init__(self):
-        self.listener = tf.TransformListener()
-        
         self.lower_pose_sub = rospy.Subscriber('myo_lower/pose', PoseStamped, self.imu_lower_callback)
         self.upper_pose_sub = rospy.Subscriber('myo_upper/pose', PoseStamped, self.imu_upper_callback)
         self.marker_pub = rospy.Publisher("visualization_marker", Marker, queue_size=10)

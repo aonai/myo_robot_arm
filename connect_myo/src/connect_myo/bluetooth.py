@@ -154,7 +154,10 @@ class Bluetooth:
         self.write_att(connection,
                        ServiceHandles.EmgData3Descriptor,
                        Final.subscribe_payload)
-
+                       
+        self.write_att(connection,
+                       ServiceHandles.ClassifierEventDescriptor,
+                       [0x02, 0x00])
 
 ##############################################################################
 #                                  HANDLERS                                  #
