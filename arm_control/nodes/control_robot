@@ -26,10 +26,19 @@ class Handler:
 
         self.listener = tf.TransformListener()
         self.PI = 3.1415926
+
+        self.K = [4, 2, 1.5]
         self.joint_state = None
-        self.waist_rpy = [0, 0, 0]
+        self.last_waist_rpy = None
+        self.current_waist_rpy = None
+        self.last_shoulder_rpy = None
+        self.current_shoulder_rpy = None
+        self.last_elbow_rpy = None
+        self.current_elbow_rpy = None
+
         self.gest = Pose.REST
-        self.pub_group_cmd = True
+        self.pub_group_cmd = False
+        
 
         self.errCode = MoveItErrorCodes.FAILURE 
         self.joint_state = None
@@ -43,6 +52,8 @@ class Handler:
         self.group.set_named_target("Home")
         self.group.go(wait=True)
         self.group.stop()
+        current_joints = self.group.get_current_joint_values()
+        self.last_target = current_joints.copy()
 
         self.add_table()
         self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 10)
@@ -50,11 +61,11 @@ class Handler:
         self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
         self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
 
-        rospy.Timer(rospy.Duration(0.5), self.listen_tf) 
-        rospy.Timer(rospy.Duration(0.5), self.pub_cmd) 
+        rospy.Timer(rospy.Duration(1), self.listen_tf) 
+        rospy.Timer(rospy.Duration(1), self.pub_cmd) 
 
     def gest_callback(self, data):
-        print("myo_lower gest = ", Pose(data.data))
+        # print("myo_lower gest = ", Pose(data.data))
         # print("name = ", self.joint_state_name)
 
         self.gest = Pose(data.data)
@@ -62,27 +73,40 @@ class Handler:
             self.pub_group_cmd = True
         else: 
             self.pub_group_cmd = False
+    
+    def check_joint_limits(self, target):
+        if target[0] > self.PI:
+            target[0] = -2*self.PI + target[0] 
+        elif target[0] < -self.PI:
+            target[0] = 2*self.PI + target[0]
 
+        if target[1] > 107*self.PI/180:
+            target[1] = 100*self.PI/180 
+            print("elbow max")
+        elif target[1] < -111*self.PI/180:
+            target[1] = -105*self.PI/180
+            print("elbow min")
+
+        if target[2] > 92*self.PI/180:
+            target[2] = 80*self.PI/180
+            print("elbow max")
+        elif target[2] < -121*self.PI/180:
+            target[2] = -100*self.PI/180
+            print("elbow min")
+        print("target = ", target)
+        return target
 
     def pub_cmd(self, event):
         if self.pub_group_cmd:
             current_joints = self.group.get_current_joint_values()
-            print("current_joints = ", current_joints)
-            print("waist_rpy = ", self.waist_rpy)
-            print("shoulder_rpy = ", self.shoulder_rpy)
-            print("elbow_rpy = ", self.elbow_rpy)
             target = current_joints.copy()
-            target[0] = self.waist_rpy[2]
-            target[1] = self.shoulder_rpy[1] 
-            target[2] = math.sqrt(self.elbow_rpy[1]**2 + self.elbow_rpy[2]**2)
+            target[0] = self.last_target[0] + self.K[0]*(self.current_waist_rpy[2] - self.last_waist_rpy[2])
+            target[1] = self.last_target[1] + self.K[1]*(self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1])
+            target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1])
 
-            if target[2] > 92*self.PI/180:
-                target[2] = 80*self.PI/180
-                print("elbow max")
-            elif target[2] < -121*self.PI/180:
-                target[2] = -100*self.PI/180
-                print("elbow min")
-            print("target = ", target)
+            target = self.check_joint_limits(target)
+            self.last_target = target
+
             self.group.set_joint_value_target(target)
             self.execute_path() 
         else:
@@ -108,13 +132,30 @@ class Handler:
     def listen_tf(self, event): 
         try:
             (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
-            self.waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+            self.last_waist_rpy = self.current_waist_rpy
+            if self.current_waist_rpy is None:
+                self.last_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                self.current_waist_rpy = self.last_waist_rpy
+            else:
+                self.current_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
             
             (trans, rot) = self.listener.lookupTransform('body', 'myo_upper', rospy.Time(0))
-            self.shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+            self.last_shoulder_rpy = self.current_shoulder_rpy
+            if self.current_shoulder_rpy is None:
+                self.last_shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                self.current_shoulder_rpy = self.last_shoulder_rpy
+            else:
+                self.current_shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
                         
             (trans, rot) = self.listener.lookupTransform('elbow', 'myo_lower', rospy.Time(0))
-            self.elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+            self.last_elbow_rpy = self.current_elbow_rpy
+            if self.current_elbow_rpy is None:
+                self.last_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                self.current_elbow_rpy = self.last_elbow_rpy
+            else:
+                self.current_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+
+            self.pub_group_cmd = True
 
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             pass

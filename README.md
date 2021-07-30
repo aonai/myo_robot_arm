@@ -13,8 +13,9 @@
 
 ## Instructions
 * `arm_control`
-    * `rosrun arm_control listen_myo` 
-    subsribes to myo imu and pose info, then displays the orientation as markers in rviz to simulate arm motion (fixed frame should be `world`) (TODO)
+    * `roslaunch arm_control control_robot.launch use_actual:=true` 
+    subsribes to myo imu and pose info, then displays the orientation as markers in rviz to simulate arm motion (fixed frame is `myo_raw` for now to visualize both IMU and marker)
+    * Use `config/4dof_joint_limits.yaml` to change velocity and acceleration of robot 
 * `connect_myo`: 
     * `roslaunch connect_myo myo.launch`
-        connects to two myo devices and displays myo  Imu and PoseStamped in rviz (fixed frame should be `myo_raw`)
+        connects to two myo devices and displays myo  Imu and PoseStamped in rviz 

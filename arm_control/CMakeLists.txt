@@ -170,6 +170,7 @@ catkin_install_python(PROGRAMS
   nodes/controller
   nodes/listen_myo
   nodes/control_robot
+  nodes/process_emg
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

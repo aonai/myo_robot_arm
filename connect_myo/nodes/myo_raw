@@ -40,10 +40,11 @@ class Handler:
         self.gestPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_gest', Int16, queue_size=1),
                        rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
         
-        rospy.Timer(rospy.Duration(0.5), self.check_myo) 
-        rospy.Timer(rospy.Duration(1/50), self.handle_imu) 
-        rospy.Timer(rospy.Duration(1/50), self.handle_gest) 
+        rospy.Timer(rospy.Duration(0.5), self.check_myo)  
         rospy.Timer(rospy.Duration(1/200), self.handle_emg) 
+        rospy.Timer(rospy.Duration(1/50), self.handle_imu) 
+        rospy.Timer(rospy.Duration(1/50), self.handle_gest)
+
         try:
             # Init
             self.myo_driver = MyoDriver(self.config)
