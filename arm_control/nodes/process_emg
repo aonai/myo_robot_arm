@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+from scipy.signal.filter_design import normalize
+import rospy
+from std_msgs.msg import Float32MultiArray, Int16
+import enum, math
+from scipy import signal
+from scipy.signal import butter, filtfilt
+import numpy as np
+
+class Pose(enum.Enum):
+    REST = 0
+    FIST = 1
+    WAVE_IN = 2
+    WAVE_OUT = 3
+    FINGERS_SPREAD = 4
+    THUMB_TO_PINKY = 5
+    UNKNOWN = 255
+
+class Handler:
+    def __init__(self):
+        self.last_time = None
+        self.current_time = None
+        self.emg_examples = None
+        self.formated_example = None
+
+        self.emg_sub = rospy.Subscriber('myo_lower/myo_emg', Float32MultiArray, self.emg_callback)
+        self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
+        self.processed_emg_pub = rospy.Publisher('myo_lower/processed_emg', Float32MultiArray, queue_size = 10)
+        
+    def emg_callback(self, data):
+        self.raw_emg = data.data
+
+        if self.last_time is None:
+            self.last_time = rospy.get_time()
+            self.current_time = self.last_time
+        else:
+            self.last_time = self.current_time
+            self.current_time = rospy.get_time()
+
+            msg = Float32MultiArray()
+            msg.data = self.proc_emg(self.raw_emg)
+            self.processed_emg_pub.publish(msg)
+
+    
+    def proc_emg(self, raw_emg):
+        normalized_emg = []
+        for emg in raw_emg:
+            if emg < 0:
+                e = emg/128
+            else:
+                e = emg/127
+            normalized_emg.append(e)
+        self.format_examples(normalized_emg)
+        return normalized_emg
+    
+    def format_examples(self, new_example, window_size=50, size_non_overlap=10):
+        if self.emg_examples is None:
+            self.emg_examples = new_example
+        else:
+            self.emg_examples = np.row_stack((self.emg_examples, new_example))
+        
+        # store one window_size of signal
+        if len(self.emg_examples) >= window_size:
+            if not np.sum(self.emg_examples) == 0:   # avoid all zero signals
+                # featured_example = getTSD(example.transpose())
+                # self.emg_examples.append(np.array(featured_example).transpose().flatten())
+                self.formated_example = self.butter_highpass_filter(self.emg_examples)
+            else:
+                self.formated_example = np.zeros((252))
+            # Remove part of the data of the example according to the size_non_overlap variable
+            self.emg_examples = self.emg_examples[size_non_overlap:]
+        
+        print("exmaple = ", np.shape(self.emg_examples), " --- ", np.shape(self.formated_example))
+        self.formated_example = None
+
+    # use raw
+    def butter_highpass(self, highcut=15.0, fs=200.0, order=5):
+        """ 
+        High-pass butterworth filter at 15Hz
+        https://stackoverflow.com/questions/39032325/python-high-pass-filter 
+        https://scipy-cookbook.readthedocs.io/items/ButterworthBandpass.html
+        """
+        nyq = 0.5 * fs
+        high = highcut / nyq
+        b, a = butter(order, high, btype='high')
+        return b, a
+    
+    def butter_highpass_filter(self, data, highcut=15.0, fs=200.0, order=5):
+        """ 
+        High-pass butterworth filter at 15Hz
+        https://stackoverflow.com/questions/39032325/python-high-pass-filter 
+        https://scipy-cookbook.readthedocs.io/items/ButterworthBandpass.html
+        """
+        # print("fs = ", fs)
+        b, a = self.butter_highpass(highcut, fs, order=order)
+        y = filtfilt(b, a, data, axis=0)
+        return y
+
+
+
+    def gest_callback(self, data):
+        # print("myo_lower gest = ", Pose(data.data))
+        self.gest = Pose(data.data)
+        if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
+            self.pub_group_cmd = True
+        else: 
+            self.pub_group_cmd = False
+    
+    
+
+
+
+
+
+def main():
+    """ The main() function. """
+    rospy.init_node('process_emg')
+    handler = Handler()
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except rospy.ROSInterruptException:
+        pass
