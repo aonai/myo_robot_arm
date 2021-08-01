@@ -65,6 +65,7 @@ class Handler:
                 self.emg_val = self.myo_driver.get_emg()
                 self.imu_val = self.myo_driver.get_imu()
                 self.gest_val = self.myo_driver.get_gest()
+                # TODO: publish here
 
 
 

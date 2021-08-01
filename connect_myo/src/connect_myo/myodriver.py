@@ -248,7 +248,7 @@ class MyoDriver:
         elif payload['atthandle'] in imu_handles:
             self.imu_val = self.data_handler.handle_imu(payload)
 
-        # TODO: Delegate classifier
+        # Delegate classifier
         elif payload['atthandle'] in gest_handles:
             self.gest_val = self.data_handler.handle_gest(payload)
 
