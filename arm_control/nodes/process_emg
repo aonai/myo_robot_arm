@@ -25,6 +25,10 @@ class Handler:
         self.featured_example = None
         self.predicted = 0
 
+        self.longterm_myo_names = ['REST', 'WF', 'WE', 'RD', 'UD', 'FP', 'FS', 'HC', 'FP & WF', 'FP & WE',
+                                    'FP & RD', 'FP & UD', 'FS & WF', 'FS & WE', 'FS & RD', 'FS & UD', 'HC & WF',
+                                    'HC & WE', 'HC & RD', 'HC & UD', 'HC & FP', 'HC & FS']
+
         self.emg_sub = rospy.Subscriber('myo_lower/myo_emg', Float32MultiArray, self.emg_callback)
         self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
         self.processed_emg_pub = rospy.Publisher('myo_lower/processed_emg', Float32MultiArray, queue_size = 10)
@@ -74,7 +78,7 @@ class Handler:
                 msg = Int16()
                 msg.data =  self.predicted  # myo bluetooth config for classifier is type, val, xdir, _, _, _
                 self.pred_pub.publish(msg)
-                print("predicted: ", self.predicted)
+                print("predicted: ", self.predicted, " ", self.longterm_myo_names[self.predicted])
             else:
                 self.formated_example = np.zeros((252))
             # Remove part of the data of the example according to the size_non_overlap variable

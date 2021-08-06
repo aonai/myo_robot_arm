@@ -6,7 +6,7 @@ from tf.transformations import euler_from_quaternion
 import tf2_ros
 import moveit_commander
 from geometry_msgs.msg import PoseStamped, Pose
-from moveit_msgs.msg import MoveItErrorCodes
+from moveit_msgs.msg import MoveItErrorCodes, DisplayTrajectory
 from sensor_msgs.msg import Imu, JointState
 from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
 from std_msgs.msg import Int16
@@ -48,7 +48,8 @@ class Handler:
         self.scene = moveit_commander.PlanningSceneInterface(ns='px100')
         self.group = moveit_commander.MoveGroupCommander("interbotix_arm", robot_description='px100/robot_description', ns='px100')
         self.gripper_group = moveit_commander.MoveGroupCommander("interbotix_gripper", robot_description='px100/robot_description', ns='px100')
-        
+        self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path', DisplayTrajectory, queue_size=1)
+
         self.group.set_named_target("Home")
         self.group.go(wait=True)
         self.group.stop()
@@ -100,6 +101,7 @@ class Handler:
         if self.pub_group_cmd:
             current_joints = self.group.get_current_joint_values()
             target = current_joints.copy()
+            # self.last_target = target # for unblock
             target[0] = self.last_target[0] + self.K[0]*(self.current_waist_rpy[2] - self.last_waist_rpy[2])
             target[1] = self.last_target[1] + self.K[1]*(self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1])
             target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1])
@@ -123,7 +125,7 @@ class Handler:
                 self.gripper_group.go(wait=True)
                 self.group.stop()
                 self.group.clear_pose_targets()
-            elif self.gest == Pose.FIST:
+            elif self.gest == Pose.FINGERS_SPREAD:
                 self.gripper_group.set_named_target("Open")
                 self.gripper_group.go(wait=True)
                 self.group.stop()
@@ -172,9 +174,16 @@ class Handler:
 
     def execute_path(self):
         """ helper function for executing planned path in move group """ 
+
+
+
         # rospy.logdebug("Execute plan")
         (result, plan, frac, errCode) = self.group.plan()
-        
+        display_trajectory = DisplayTrajectory()
+        display_trajectory.trajectory_start = self.robot.get_current_state()
+        display_trajectory.trajectory.append(plan)
+        self.display_trajectory_publisher.publish(display_trajectory)
+        # rospy.sleep(0.5)
         # rospy.loginfo(f"err code = {errCode}")
         # rospy.loginfo(f"plan = {plan}")
         result = self.group.execute(plan, wait=True)
