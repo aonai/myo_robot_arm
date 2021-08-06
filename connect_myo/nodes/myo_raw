@@ -15,15 +15,14 @@ class Handler:
         # Run
         self.config = Config()
         self.num_myo = rospy.get_param('num_myo')
-        # self.myo_lower_address = rospy.get_param('myo_lower_address')
-        # self.myo_upper_address = rospy.get_param('myo_upper_address')
-        # self.myo_lower_address = struct.pack('6B', *self.myo_lower_address)
-        # self.myo_upper_address = struct.pack('6B', *self.myo_upper_address)
         self.config.MYO_AMOUNT = self.num_myo
         self.myo_driver = None
         self.emg_val = None
         self.imu_val = None
         self.gest_val = None
+        self.rate = rospy.Rate(20000) 
+        self.last_emg = None
+        self.last_imu = None
 
         # ROS Params
         self.myo_name = rospy.get_param('myo_name')
@@ -41,8 +40,8 @@ class Handler:
                        rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
         
         rospy.Timer(rospy.Duration(0.5), self.check_myo)  
-        rospy.Timer(rospy.Duration(1/200), self.handle_emg) 
-        rospy.Timer(rospy.Duration(1/50), self.handle_imu) 
+        # rospy.Timer(rospy.Duration(1/200), self.handle_emg) 
+        # rospy.Timer(rospy.Duration(1/50), self.handle_imu) 
         rospy.Timer(rospy.Duration(1/50), self.handle_gest)
 
         try:
@@ -65,8 +64,9 @@ class Handler:
                 self.emg_val = self.myo_driver.get_emg()
                 self.imu_val = self.myo_driver.get_imu()
                 self.gest_val = self.myo_driver.get_gest()
-                # TODO: publish here
-
+                self.pub_emg()
+                self.pub_imu()
+                self.rate.sleep()
 
 
         except KeyboardInterrupt:
@@ -83,6 +83,65 @@ class Handler:
                 else:
                     self.myo_driver.disconnect_all()
             print("Disconnected")
+
+    def pub_emg(self):
+        if self.last_emg is None \
+            or not self.last_emg == self.emg_val:
+            self.last_emg = self.emg_val.copy()
+            # print(f"time = {rospy.get_time()} --- {self.emg_val} --- {self.last_emg}")
+            msg = Float32MultiArray()
+            msg.data = self.emg_val[0]
+            self.emgPub[0].publish(msg)
+            msg.data = self.emg_val[1]
+            self.emgPub[1].publish(msg)
+        
+    def pub_imu(self):
+        """ Adapted from https://github.com/uts-magic-lab/ros_myo """
+        if self.last_imu is None \
+            or not self.last_imu == self.imu_val:
+            self.last_imu = self.imu_val.copy()
+            # print(f"time = {rospy.get_time()} --- {self.imu_val} --- {self.last_imu}")
+            for i in range(2):
+                current_imu_tuple = self.imu_val[i]
+                quat1 = current_imu_tuple[0]
+                quat = []
+                for q in quat1:
+                    quat.append(q*-1)
+                acc = current_imu_tuple[1]
+                gyro = current_imu_tuple[2]
+
+                h = Header()
+                h.stamp = rospy.Time.now()
+                # frame_id is node name without /
+                h.frame_id = rospy.get_name()[1:]
+                # We currently don't know the covariance of the sensors with each other
+                cov = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+                quat = Quaternion(quat1[0] / 16384.0,
+                                quat1[1] / 16384.0,
+                                quat1[2] / 16384.0,
+                                quat1[3] / 16384.0)
+                # Normalize the quaternion and accelerometer values
+                quatNorm = sqrt(quat.x * quat.x + quat.y *
+                                quat.y + quat.z * quat.z + quat.w * quat.w)
+                normQuat = Quaternion(quat.x / quatNorm,
+                                    quat.y / quatNorm,
+                                    quat.z / quatNorm,
+                                    quat.w / quatNorm)
+                normAcc = Vector3(acc[0] / 2048.0,
+                                acc[1] / 2048.0,
+                                acc[2] / 2048.0)
+                normGyro = Vector3(gyro[0] / 16.0, gyro[1] / 16.0, gyro[2] / 16.0)
+                imu = Imu(h, normQuat, cov, normGyro, cov, normAcc, cov)
+                roll, pitch, yaw = euler_from_quaternion([normQuat.x,
+                                                        normQuat.y,
+                                                        normQuat.z,
+                                                        normQuat.w])
+                self.imuPub[i].publish(imu)
+                self.oriPub[i].publish(Vector3(roll, pitch, yaw))
+                self.oriDegPub[i].publish(Vector3(degrees(roll), degrees(pitch), degrees(yaw)))
+                self.posePub[i].publish(PoseStamped(h,Pose(Point(0.0,0.0,0.0),normQuat)) )
+
+        
 
     def check_myo(self, event):
         if not self.myo_name == rospy.get_param('myo_name'):
@@ -101,58 +160,7 @@ class Handler:
             self.gestPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_gest', Int16, queue_size=1),
                         rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
  
-    def handle_imu(self, event):
-        """ Adapted from https://github.com/uts-magic-lab/ros_myo """
-        if self.imu_val is not None:
-            # print("imu = ", self.imu_val)
-            myo_idx = self.imu_val[0]
-            quat1 = self.imu_val[1]
-            quat = []
-            for q in quat1:
-                quat.append(q*-1)
-            acc = self.imu_val[2]
-            gyro = self.imu_val[3]
 
-            h = Header()
-            h.stamp = rospy.Time.now()
-            # frame_id is node name without /
-            h.frame_id = rospy.get_name()[1:]
-            # We currently don't know the covariance of the sensors with each other
-            cov = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-            quat = Quaternion(quat1[0] / 16384.0,
-                              quat1[1] / 16384.0,
-                              quat1[2] / 16384.0,
-                              quat1[3] / 16384.0)
-            # Normalize the quaternion and accelerometer values
-            quatNorm = sqrt(quat.x * quat.x + quat.y *
-                            quat.y + quat.z * quat.z + quat.w * quat.w)
-            normQuat = Quaternion(quat.x / quatNorm,
-                                quat.y / quatNorm,
-                                quat.z / quatNorm,
-                                quat.w / quatNorm)
-            normAcc = Vector3(acc[0] / 2048.0,
-                            acc[1] / 2048.0,
-                            acc[2] / 2048.0)
-            normGyro = Vector3(gyro[0] / 16.0, gyro[1] / 16.0, gyro[2] / 16.0)
-            imu = Imu(h, normQuat, cov, normGyro, cov, normAcc, cov)
-            roll, pitch, yaw = euler_from_quaternion([normQuat.x,
-                                                    normQuat.y,
-                                                    normQuat.z,
-                                                    normQuat.w])
-            self.imuPub[myo_idx].publish(imu)
-            self.oriPub[myo_idx].publish(Vector3(roll, pitch, yaw))
-            self.oriDegPub[myo_idx].publish(Vector3(degrees(roll), degrees(pitch), degrees(yaw)))
-            self.posePub[myo_idx].publish(PoseStamped(h,Pose(Point(0.0,0.0,0.0),normQuat)) )
-
-
-    def handle_emg(self, event):
-        if self.emg_val is not None:
-            # print("emg = ", self.emg_val)
-            msg = Float32MultiArray()
-            msg.data = self.emg_val[1]
-            myo_idx = self.emg_val[0]
-            self.emgPub[myo_idx].publish(msg)
-    
     def handle_gest(self, event):
         if self.gest_val is not None:
             print("gest = ", self.gest_val)

@@ -134,7 +134,8 @@ class Handler:
         world_body_tf.header.stamp = rospy.Time.now()
         world_body_tf.header.frame_id = "elbow_tresh"
         world_body_tf.child_frame_id = "elbow_z"
-        body_q = quaternion_from_euler(0, 0, 3.14-self.lower_rpy[0])
+        # body_q = quaternion_from_euler(0, 0, 3.14-self.lower_rpy[0])
+        body_q = quaternion_from_euler(0, 0, self.upper_rpy[0]-self.lower_rpy[0])
         world_body_tf.transform.rotation.x = body_q[0]
         world_body_tf.transform.rotation.y = body_q[1]
         world_body_tf.transform.rotation.z = body_q[2]

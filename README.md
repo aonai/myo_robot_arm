@@ -19,3 +19,4 @@
 * `connect_myo`: 
     * `roslaunch connect_myo myo.launch`
         connects to two myo devices and displays myo  Imu and PoseStamped in rviz 
+        * Use `rosparam set /myo_name "['myo_lower', 'myo_upper']"` or `rosparam set /myo_name "['myo_upper', 'myo_lower']"` to assign which myo is on lower/upper arm

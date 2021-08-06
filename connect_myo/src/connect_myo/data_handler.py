@@ -11,11 +11,15 @@ class DataHandler:
         self.printEmg = config.PRINT_EMG
         self.printImu = config.PRINT_IMU
         self.printGest = config.PRINT_GEST
+
+        self.two_emg = [None, None]
+        self.two_imu = [None, None]
     
     def handle_gest(self, payload):
         val = struct.unpack('6B',  payload['value'])
         if self.printGest:
             print("gest", payload['connection'], payload['atthandle'], val)
+
         return payload['connection'], val
 
 
@@ -26,9 +30,13 @@ class DataHandler:
         """
         val = struct.unpack('<8b',  payload['value'][:8])
         val2 = struct.unpack('<8b',  payload['value'][8:]) 
+        
         if self.printEmg:
             print("EMG", payload['connection'], payload['atthandle'], val)
-        return payload['connection'], val
+
+        self.two_emg[payload['connection']] = val    
+        
+        return self.two_emg
 
     def handle_imu(self, payload):
         """
@@ -43,7 +51,9 @@ class DataHandler:
         if self.printImu:
             print("IMU", payload['connection'], payload['atthandle'], quat, acc, gyro)
         
-        return payload['connection'], quat, acc, gyro
+        self.two_imu[payload['connection']] = (quat, acc, gyro)    
+        
+        return self.two_imu
 
 
     @staticmethod
