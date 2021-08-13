@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <launch>
-    <node name="process_emg" pkg="arm_control" type="process_emg" output="screen"/>
+    <!-- <node name="process_emg" pkg="arm_control" type="process_emg" output="screen"/> -->
 
-    <node name="plot_raw_emg"
+    <!-- <node name="plot_raw_emg"
         pkg="rqt_plot"
         type="rqt_plot"
         args="/myo_lower/myo_emg/data[0] 
@@ -12,9 +12,9 @@
             /myo_lower/myo_emg/data[4]
             /myo_lower/myo_emg/data[5]
             /myo_lower/myo_emg/data[6]
-            /myo_lower/myo_emg/data[7]"/>
+            /myo_lower/myo_emg/data[7]"/> -->
     
-    <node name="plot_processed_emg"
+    <!-- <node name="plot_processed_emg"
         pkg="rqt_plot"
         type="rqt_plot"
         args="/myo_lower/processed_emg/data[0] 
@@ -24,5 +24,17 @@
             /myo_lower/processed_emg/data[4]
             /myo_lower/processed_emg/data[5]
             /myo_lower/processed_emg/data[6]
-            /myo_lower/processed_emg/data[7]"/>
+            /myo_lower/processed_emg/data[7]"/> -->
+
+    <node name="plot_processed_emg"
+        pkg="rqt_plot"
+        type="rqt_plot"
+        args="/myo_upper/myo_emg/data[0] 
+            /myo_upper/myo_emg/data[1]
+            /myo_upper/myo_emg/data[2]
+            /myo_upper/myo_emg/data[3]
+            /myo_upper/myo_emg/data[4]
+            /myo_upper/myo_emg/data[5]
+            /myo_upper/myo_emg/data[6]
+            /myo_upper/myo_emg/data[7]"/>
 </launch>

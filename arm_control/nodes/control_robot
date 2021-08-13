@@ -9,8 +9,9 @@ from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import MoveItErrorCodes, DisplayTrajectory
 from sensor_msgs.msg import Imu, JointState
 from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
-from std_msgs.msg import Int16
+from std_msgs.msg import Int16, Bool
 import enum, math
+import numpy as np
 
 class Pose(enum.Enum):
     REST = 0
@@ -21,12 +22,20 @@ class Pose(enum.Enum):
     THUMB_TO_PINKY = 5
     UNKNOWN = 255
 
+class MyoPred(enum.Enum):
+    REST = 0
+    WF = 1
+    WE = 2
+    RD = 3
+    UD = 4
+
 class Handler:
     def __init__(self):
 
         self.listener = tf.TransformListener()
         self.PI = 3.1415926
 
+        # self.K = [0.5, 0.5, 0.5]
         self.K = [4, 2, 1.5]
         self.joint_state = None
         self.last_waist_rpy = None
@@ -36,9 +45,11 @@ class Handler:
         self.last_elbow_rpy = None
         self.current_elbow_rpy = None
 
+
         self.gest = Pose.REST
         self.pub_group_cmd = False
-        
+        self.tmp_pred = []
+        self.current_pred = MyoPred.REST
 
         self.errCode = MoveItErrorCodes.FAILURE 
         self.joint_state = None
@@ -56,14 +67,20 @@ class Handler:
         current_joints = self.group.get_current_joint_values()
         self.last_target = current_joints.copy()
 
+        self.store_target = None
+        self.stored_goals = np.load('/home/laiy/gitrepos/myo_ws/goal.npy')
+        self.idx = 0
+
         self.add_table()
         self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 10)
         self.single_cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 10)
         self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
-        self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
+        # self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
+        self.pred_sub = rospy.Subscriber('myo_lower/myo_pred', Int16, self.pred_callback)
+        self.pred_sub = rospy.Subscriber('myo_upper/rest_bicep', Bool, self.rest_bicep_callback)
 
         rospy.Timer(rospy.Duration(1), self.listen_tf) 
-        rospy.Timer(rospy.Duration(1), self.pub_cmd) 
+        rospy.Timer(rospy.Duration(2), self.pub_cmd) 
 
     def gest_callback(self, data):
         # print("myo_lower gest = ", Pose(data.data))
@@ -95,42 +112,56 @@ class Handler:
             target[2] = -100*self.PI/180
             print("elbow min")
         print("target = ", target)
+
+
+        # if self.store_target is None:
+        #     self.store_target = target
+        # else:
+        #     self.store_target = np.row_stack((self.store_target, target))
+        #     np.save('/home/laiy/gitrepos/myo_ws/goal.npy', np.array(self.store_target))
+
         return target
 
     def pub_cmd(self, event):
+        self.check_pred()
         if self.pub_group_cmd:
             current_joints = self.group.get_current_joint_values()
             target = current_joints.copy()
-            # self.last_target = target # for unblock
             target[0] = self.last_target[0] + self.K[0]*(self.current_waist_rpy[2] - self.last_waist_rpy[2])
             target[1] = self.last_target[1] + self.K[1]*(self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1])
-            target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1])
+            target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1]) 
 
             target = self.check_joint_limits(target)
             self.last_target = target
 
             self.group.set_joint_value_target(target)
             self.execute_path() 
+
+            # self.group.set_joint_value_target(self.stored_goals[self.idx])
+            # self.execute_path()
+            # self.idx+=1
         else:
-            if self.gest == Pose.WAVE_OUT or self.gest == Pose.WAVE_IN:
-                k = 1 if self.gest == Pose.WAVE_IN else -1            
+            if self.gest == Pose.WAVE_OUT or self.gest == Pose.WAVE_IN \
+                or self.current_pred == MyoPred.WF or self.current_pred == MyoPred.WE:
+                if self.gest == Pose.WAVE_IN or self.current_pred == MyoPred.WF:
+                    k = 1
+                else:
+                    k =  -1            
                 cmd_msg = JointSingleCommand()
                 cmd_msg.name = self.joint_state_name[3]
                 print("JS = ", self.joint_state)
                 cmd_msg.cmd = self.joint_state[3] + 0.1*k
                 print("command 1 = ", cmd_msg)
                 self.single_cmd_pub.publish(cmd_msg)
-            elif self.gest == Pose.THUMB_TO_PINKY:
+            elif self.gest == Pose.THUMB_TO_PINKY or self.current_pred == MyoPred.UD:
                 self.gripper_group.set_named_target("Closed")
                 self.gripper_group.go(wait=True)
-                self.group.stop()
-                self.group.clear_pose_targets()
-            elif self.gest == Pose.FINGERS_SPREAD:
+            elif self.gest == Pose.FINGERS_SPREAD or self.current_pred == MyoPred.RD:
                 self.gripper_group.set_named_target("Open")
                 self.gripper_group.go(wait=True)
-                self.group.stop()
-                self.group.clear_pose_targets()
-
+            self.group.stop()
+            self.group.clear_pose_targets()
+        
     def listen_tf(self, event): 
         try:
             (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
@@ -157,8 +188,6 @@ class Handler:
             else:
                 self.current_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
 
-            self.pub_group_cmd = True
-
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             pass
 
@@ -174,18 +203,20 @@ class Handler:
 
     def execute_path(self):
         """ helper function for executing planned path in move group """ 
-
-
-
         # rospy.logdebug("Execute plan")
+        # self.group.set_start_state_to_current_state()
+        # self.group.set_random_target()
         (result, plan, frac, errCode) = self.group.plan()
+        # plan = self.group.go(joints = self.last_target, wait=False)
+        # print("frac = ", frac)
         display_trajectory = DisplayTrajectory()
         display_trajectory.trajectory_start = self.robot.get_current_state()
         display_trajectory.trajectory.append(plan)
         self.display_trajectory_publisher.publish(display_trajectory)
-        # rospy.sleep(0.5)
+        # rospy.sleep(1.0)
         # rospy.loginfo(f"err code = {errCode}")
         # rospy.loginfo(f"plan = {plan}")
+        # if frac > 0.8:
         result = self.group.execute(plan, wait=True)
         self.group.stop()
         self.group.clear_pose_targets()
@@ -197,6 +228,31 @@ class Handler:
             self.first_js = list(self.joint_state)
             self.joint_state_name = list(data.name)
             # print("name = ", self.joint_state_name)
+       
+    def pred_callback(self, data):
+        pred = data.data
+        self.tmp_pred.append(pred)
+    
+    def check_pred(self):
+        counts = np.unique(self.tmp_pred, return_counts=True)
+        print(self.tmp_pred)
+        print("Counts = ", counts)
+        for idx, observed_pred in enumerate(counts[0]):
+            if counts[1][idx] > len(self.tmp_pred)*0.9:
+                self.current_pred = MyoPred(observed_pred)
+                break
+            else:
+                self.current_pred = MyoPred.REST
+        self.tmp_pred = []
+        self.pub_group_cmd = True if self.current_pred == MyoPred.REST else False
+        print("Pred = ", self.current_pred, " pub group ", self.pub_group_cmd)
+    
+    def rest_bicep_callback(self, data):
+        if data.data:
+            self.K = [4, 2, 1.5]
+        else:
+            self.K = [0.5, 1, 0.7]
+
 
 def main():
     """ The main() function. """

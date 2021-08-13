@@ -3,6 +3,7 @@
   <arg name="use_actual" default="false"/>
 
   <include file="$(find arm_control)/launch/moveit/xsarm_moveit.launch">
+  <!-- <include file="$(find interbotix_xsarm_moveit)/launch/xsarm_moveit.launch"> -->
     <arg name="use_fake" value="true"  if="$(arg use_fake)"/>
     <arg name="use_actual" value="true"  if="$(arg use_actual)"/>
     <arg name="robot_model" value="px100"/>
@@ -12,6 +13,7 @@
 
   <!-- <remap from="joint_states" to="px100/joint_states" /> -->
   <node name="listen_myo" pkg="arm_control" type="listen_myo" output="screen"/>
+  <node name="process_emg" pkg="arm_control" type="process_emg" output="screen"/>
   <node name="control_robot" pkg="arm_control" type="control_robot" output="screen"/>
 
 </launch>
