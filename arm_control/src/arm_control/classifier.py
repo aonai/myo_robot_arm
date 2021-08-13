@@ -3,9 +3,9 @@ import numpy as np
 from arm_control.TSD_neural_network import TSD_Network
 
 
-path_weights ="/home/laiy/gitrepos/msr_final/LongTermEMG_myo/TrainingsAndEvaluations/ForTrainingSessions/Weights_across_loc/SCADANN/participant_4/best_state_2.pt"
+path_weights ="/home/laiy/gitrepos/msr_final/LongTermEMG_myo/TrainingsAndEvaluations/ForTrainingSessions/Weights_ros/TSD/participant_0/best_state_0.pt"
 num_kernels=[200, 200, 200]                        # model layer size 
-number_of_classes=22
+number_of_classes=5
 feature_vector_input_length=252                     # size of one example 
 
 model = TSD_Network(number_of_class=number_of_classes, num_neurons=num_kernels,
