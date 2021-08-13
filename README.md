@@ -18,6 +18,7 @@
     * Use `config/4dof_joint_limits.yaml` to change velocity and acceleration of robot 
     * `roslaunch arm_control process_emg.launch`
     predicts gestures from emg signals. Needs to specify path to trained model weights.
+    * `rosservice call /record_upper` records upper arm biceps at rest for around 3 seconds. Afterwards, enables more precise robot movements while biceps are activated.
 * `connect_myo`: 
     * `roslaunch connect_myo myo.launch`
         connects to two myo devices and displays myo  Imu and PoseStamped in rviz 
