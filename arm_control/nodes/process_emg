@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import rospy
-from std_msgs.msg import Float32MultiArray, Int16
+from std_msgs.msg import Float32MultiArray, Int16, Bool
 import enum
 import numpy as np
 from arm_control.utils import butter_highpass_filter, getTSD
 from arm_control.classifier import predict
+from std_srvs.srv import Empty
 
 
 class Pose(enum.Enum):
@@ -24,6 +25,10 @@ class Handler:
         self.formated_example = None
         self.featured_example = None
         self.predicted = 0
+        self.raw_emg = None
+        self.upper_emg_at_rest = None
+        self.start_record = False
+        self.rest_thresh = None
 
         self.longterm_myo_names = ['REST', 'WF', 'WE', 'RD', 'UD', 'FP', 'FS', 'HC', 'FP & WF', 'FP & WE',
                                     'FP & RD', 'FP & UD', 'FS & WF', 'FS & WE', 'FS & RD', 'FS & UD', 'HC & WF',
@@ -32,7 +37,12 @@ class Handler:
         self.emg_sub = rospy.Subscriber('myo_lower/myo_emg', Float32MultiArray, self.emg_callback)
         self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
         self.processed_emg_pub = rospy.Publisher('myo_lower/processed_emg', Float32MultiArray, queue_size = 10)
-        self.pred_pub = rospy.Publisher(f'myo_lower/myo_pred', Int16, queue_size=1)
+        self.pred_pub = rospy.Publisher('myo_lower/myo_pred', Int16, queue_size=1)
+        self.bicep_pub = rospy.Publisher('myo_upper/rest_bicep', Bool, queue_size=1)
+        rospy.Timer(rospy.Duration(1/10), self.pub_arm_stats) 
+
+        self.record_upper_service = rospy.Service("record_upper", Empty, self.record_upper_callback)
+        
         
     def emg_callback(self, data):
         self.raw_emg = data.data
@@ -45,8 +55,24 @@ class Handler:
             self.current_time = rospy.get_time()
 
             msg = Float32MultiArray()
-            msg.data = self.proc_emg(self.raw_emg)
+            msg.data  = self.proc_emg(self.raw_emg)
             self.processed_emg_pub.publish(msg)
+
+            if self.start_record and self.predicted == 0:
+                print("Recording. Keep arm at rest ")
+                if self.upper_emg_at_rest is None:
+                    self.upper_emg_at_rest = self.raw_emg
+                else:
+                    self.upper_emg_at_rest = np.row_stack((self.upper_emg_at_rest, self.raw_emg))
+
+                    if len(self.upper_emg_at_rest) >= 500: # 2.5s window at 200Hz
+                        self.start_record = False
+                        m = np.mean(self.upper_emg_at_rest)
+                        std = np.std(self.upper_emg_at_rest)
+                        self.rest_thresh = np.abs(m + std)
+                        print("Record Complete. ", np.shape(self.upper_emg_at_rest), " mean = ", m, " std = ", std)
+                        print("Thresh = ", self.rest_thresh)
+
 
     
     def proc_emg(self, raw_emg):
@@ -75,10 +101,6 @@ class Handler:
                 self.formated_example = butter_highpass_filter(self.emg_examples)
                 self.featured_example = getTSD(self.formated_example.transpose())
                 self.predicted = predict(self.featured_example)
-                msg = Int16()
-                msg.data =  self.predicted  # myo bluetooth config for classifier is type, val, xdir, _, _, _
-                self.pred_pub.publish(msg)
-                print("predicted: ", self.predicted, " ", self.longterm_myo_names[self.predicted])
             else:
                 self.formated_example = np.zeros((252))
             # Remove part of the data of the example according to the size_non_overlap variable
@@ -96,6 +118,27 @@ class Handler:
         else: 
             self.pub_group_cmd = False
     
+    def pub_arm_stats(self, event):
+        msg = Int16()
+        msg.data =  self.predicted  
+        if self.start_record:
+            print("predicted: ", self.predicted, " ", self.longterm_myo_names[self.predicted])
+        self.pred_pub.publish(msg)
+
+        msg = Bool()
+        if self.rest_thresh is None: # assume bicep is always at rest when no thresh is recorded 
+            msg.data = True
+        else:
+            m = np.mean(self.raw_emg)
+            std = np.std(self.raw_emg)
+            # print("bicep ", m+std, " vs ", self.rest_thresh, " = ", np.abs(m+std) > self.rest_thresh)
+            msg.data = False if np.abs(m+std) > self.rest_thresh else True
+        self.bicep_pub.publish(msg)
+
+    def record_upper_callback(self, res):
+        print("recording upper EMG, keep arm at rest")
+        self.start_record = True
+        return []
     
 
 
