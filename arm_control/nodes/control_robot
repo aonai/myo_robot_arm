@@ -9,7 +9,7 @@ from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import MoveItErrorCodes, DisplayTrajectory
 from sensor_msgs.msg import Imu, JointState
 from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
-from std_msgs.msg import Int16, Bool
+from std_msgs.msg import Int16, Bool, Float32MultiArray
 import enum, math
 import numpy as np
 
@@ -72,15 +72,16 @@ class Handler:
         self.idx = 0
 
         self.add_table()
-        self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 10)
-        self.single_cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 10)
+        self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 1)
+        self.single_cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 1)
         self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
         # self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
-        self.pred_sub = rospy.Subscriber('myo_lower/myo_pred', Int16, self.pred_callback)
-        self.pred_sub = rospy.Subscriber('myo_upper/rest_bicep', Bool, self.rest_bicep_callback)
+        # self.pred_sub = rospy.Subscriber('myo_lower/myo_pred', Int16, self.pred_callback)
+        self.rest_bicep_sub = rospy.Subscriber('myo_upper/rest_bicep', Bool, self.rest_bicep_callback)
+        self.tf_rpy_pub = rospy.Publisher('tf_rpy', Float32MultiArray, queue_size=1)
 
-        rospy.Timer(rospy.Duration(1), self.listen_tf) 
-        rospy.Timer(rospy.Duration(2), self.pub_cmd) 
+        rospy.Timer(rospy.Duration(1/50), self.listen_tf) 
+        # rospy.Timer(rospy.Duration(1/25), self.pub_cmd) 
 
     def gest_callback(self, data):
         # print("myo_lower gest = ", Pose(data.data))
@@ -98,17 +99,17 @@ class Handler:
         elif target[0] < -self.PI:
             target[0] = 2*self.PI + target[0]
 
-        if target[1] > 107*self.PI/180:
+        if target[1] > 100*self.PI/180:
             target[1] = 100*self.PI/180 
             print("elbow max")
-        elif target[1] < -111*self.PI/180:
+        elif target[1] < -105*self.PI/180:
             target[1] = -105*self.PI/180
             print("elbow min")
 
-        if target[2] > 92*self.PI/180:
+        if target[2] > 80*self.PI/180:
             target[2] = 80*self.PI/180
             print("elbow max")
-        elif target[2] < -121*self.PI/180:
+        elif target[2] < -100*self.PI/180:
             target[2] = -100*self.PI/180
             print("elbow min")
         print("target = ", target)
@@ -122,14 +123,22 @@ class Handler:
 
         return target
 
-    def pub_cmd(self, event):
+    # def pub_cmd(self, event):
+    def pub_cmd(self):
         self.check_pred()
         if self.pub_group_cmd:
             current_joints = self.group.get_current_joint_values()
             target = current_joints.copy()
+            # self.last_target = current_joints.copy()
             target[0] = self.last_target[0] + self.K[0]*(self.current_waist_rpy[2] - self.last_waist_rpy[2])
-            target[1] = self.last_target[1] + self.K[1]*(self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1])
-            target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1]) 
+            target[1] = self.last_target[1] + self.K[1]*(self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1]) 
+            target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1])
+
+            msg = Float32MultiArray()
+            msg.data = [self.current_waist_rpy[2] - self.last_waist_rpy[2],
+                        self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1],
+                        self.current_elbow_rpy[1] - self.last_elbow_rpy[1]]
+            self.tf_rpy_pub.publish(msg)
 
             target = self.check_joint_limits(target)
             self.last_target = target
@@ -141,9 +150,8 @@ class Handler:
             # self.execute_path()
             # self.idx+=1
         else:
-            if self.gest == Pose.WAVE_OUT or self.gest == Pose.WAVE_IN \
-                or self.current_pred == MyoPred.WF or self.current_pred == MyoPred.WE:
-                if self.gest == Pose.WAVE_IN or self.current_pred == MyoPred.WF:
+            if self.current_pred == MyoPred.WF or self.current_pred == MyoPred.WE:
+                if self.current_pred == MyoPred.WF:
                     k = 1
                 else:
                     k =  -1            
@@ -153,10 +161,10 @@ class Handler:
                 cmd_msg.cmd = self.joint_state[3] + 0.1*k
                 print("command 1 = ", cmd_msg)
                 self.single_cmd_pub.publish(cmd_msg)
-            elif self.gest == Pose.THUMB_TO_PINKY or self.current_pred == MyoPred.UD:
+            elif self.current_pred == MyoPred.UD:
                 self.gripper_group.set_named_target("Closed")
                 self.gripper_group.go(wait=True)
-            elif self.gest == Pose.FINGERS_SPREAD or self.current_pred == MyoPred.RD:
+            elif self.current_pred == MyoPred.RD:
                 self.gripper_group.set_named_target("Open")
                 self.gripper_group.go(wait=True)
             self.group.stop()
@@ -188,6 +196,7 @@ class Handler:
             else:
                 self.current_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
 
+            self.pub_cmd()
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             pass
 
@@ -237,7 +246,7 @@ class Handler:
         counts = np.unique(self.tmp_pred, return_counts=True)
         print(self.tmp_pred)
         print("Counts = ", counts)
-        for idx, observed_pred in enumerate(counts[0]):
+        for idx, observed_pred in enumerate(counts[0]): 
             if counts[1][idx] > len(self.tmp_pred)*0.9:
                 self.current_pred = MyoPred(observed_pred)
                 break
@@ -250,6 +259,7 @@ class Handler:
     def rest_bicep_callback(self, data):
         if data.data:
             self.K = [4, 2, 1.5]
+            # self.K = [4, 2, 1.5]
         else:
             self.K = [0.5, 1, 0.7]
 

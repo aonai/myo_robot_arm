@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from arm_control.TSD_neural_network import TSD_Network
 
-path_weights ="./src/arm_control/src/arm_control/model/best_state_0.pt"
+path_weights ="/home/laiy/gitrepos/myo_ws/src/arm_control/src/arm_control/model/best_state_0.pt"
 # path_weights ="/home/laiy/gitrepos/msr_final/LongTermEMG_myo/TrainingsAndEvaluations/ForTrainingSessions/Weights_ros/TSD/participant_0/best_state_0.pt"
 num_kernels=[200, 200, 200]                        # model layer size 
 number_of_classes=5

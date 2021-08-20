@@ -136,7 +136,7 @@ class Handler:
         world_body_tf.child_frame_id = "elbow_z"
         if self.upper_rpy is not None and self.lower_rpy is not None:
         # body_q = quaternion_from_euler(0, 0, 3.14-self.lower_rpy[0])
-            body_q = quaternion_from_euler(0, 0, 3.14/4+self.upper_rpy[0]-self.lower_rpy[0])
+            body_q = quaternion_from_euler(0, 0, -3.14/2.5+self.upper_rpy[0]-self.lower_rpy[0])
         else:
             body_q = quaternion_from_euler(0, 0, 0)
         world_body_tf.transform.rotation.x = body_q[0]

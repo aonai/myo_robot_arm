@@ -12,8 +12,37 @@
 
 
   <!-- <remap from="joint_states" to="px100/joint_states" /> -->
-  <node name="listen_myo" pkg="arm_control" type="listen_myo" output="screen"/>
-  <node name="process_emg" pkg="arm_control" type="process_emg" output="screen"/>
+  <node name="listen_myo" pkg="arm_control" type="listen_myo" />
+  <node name="process_emg" pkg="arm_control" type="process_emg" />
   <node name="control_robot" pkg="arm_control" type="control_robot" output="screen"/>
+
+  <node name="waist_command"
+      pkg="rqt_plot"
+      type="rqt_plot"
+      args="/myo_upper/pose/pose/orientation/x
+          /px100/arm_controller/state/desired/positions[0]
+          /px100/arm_controller/state/actual/positions[0]"/>
+
+  <!-- <node name="shoulder_command"
+      pkg="rqt_plot"
+      type="rqt_plot"
+      args="/myo_upper/pose/pose/orientation/y
+          /px100/arm_controller/state/desired/positions[1]
+          /px100/arm_controller/state/actual/positions[1]"/> -->
+
+  <!-- <node name="elbow_command"
+      pkg="rqt_plot"
+      type="rqt_plot"
+      args="/myo_lower/pose/pose/orientation/x
+          /myo_upper/pose/pose/orientation/x
+          /px100/arm_controller/state/desired/positions[2]
+          /px100/arm_controller/state/actual/positions[2]"/>    -->
+  
+  <!-- <node name="wrist_and_gripper_command"
+      pkg="rqt_plot"
+      type="rqt_plot"
+      args="/myo_lower/myo_pred
+          /px100/arm_controller/state/desired/positions[3]
+          /px100/arm_controller/state/actual/positions[3]"/>    -->
 
 </launch>
