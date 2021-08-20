@@ -33,7 +33,7 @@ class Handler:
         self.longterm_myo_names = ['REST', 'WF', 'WE', 'RD', 'UD', 'FP', 'FS', 'HC', 'FP & WF', 'FP & WE',
                                     'FP & RD', 'FP & UD', 'FS & WF', 'FS & WE', 'FS & RD', 'FS & UD', 'HC & WF',
                                     'HC & WE', 'HC & RD', 'HC & UD', 'HC & FP', 'HC & FS']
-
+        # self.longterm_myo_names = ['REST', 'FP & WF', 'FP & WE', 'FP & RD', 'FP & UD']
         self.emg_sub = rospy.Subscriber('myo_lower/myo_emg', Float32MultiArray, self.emg_callback)
         self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
         self.processed_emg_pub = rospy.Publisher('myo_lower/processed_emg', Float32MultiArray, queue_size = 10)
@@ -120,9 +120,16 @@ class Handler:
     
     def pub_arm_stats(self, event):
         msg = Int16()
-        msg.data =  self.predicted  
-        if self.start_record:
-            print("predicted: ", self.predicted, " ", self.longterm_myo_names[self.predicted])
+        if (self.predicted == 3 or self.predicted == 4):
+            if self.gest == Pose.WAVE_IN:
+                msg.data =  1  
+            elif self.gest == Pose.WAVE_OUT: 
+                msg.data = 2
+            else:
+                msg.data = self.predicted
+        # if self.start_record:
+        print("predicted: ", self.predicted, " ", self.longterm_myo_names[self.predicted], " --- pub msg: ", \
+                msg.data, " ", self.longterm_myo_names[msg.data])
         self.pred_pub.publish(msg)
 
         msg = Bool()
