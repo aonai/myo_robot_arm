@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-import sys
 import rospy
-import tf
-from tf.transformations import euler_from_quaternion
-import tf2_ros
+import enum
+import numpy as np
 import moveit_commander
 from geometry_msgs.msg import PoseStamped, Pose
-from moveit_msgs.msg import MoveItErrorCodes, DisplayTrajectory
-from sensor_msgs.msg import Imu, JointState
+from moveit_msgs.msg import MoveItErrorCodes, DisplayTrajectory, RobotState
+from sensor_msgs.msg import JointState
 from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
-from std_msgs.msg import Int16, Bool, Float32MultiArray
-import enum, math
-import numpy as np
+from std_msgs.msg import Bool, Float32MultiArray, Header
+
 
 class Pose(enum.Enum):
     REST = 0
@@ -31,20 +28,13 @@ class MyoPred(enum.Enum):
 
 class Handler:
     def __init__(self):
-
-        self.listener = tf.TransformListener()
+        self.cmd_freq = rospy.get_param('cmd_freq')
         self.PI = 3.1415926
-
-        # self.K = [0.5, 0.5, 0.5]
         self.K = [4, 2, 1.5]
         self.joint_state = None
-        self.last_waist_rpy = None
-        self.current_waist_rpy = None
-        self.last_shoulder_rpy = None
-        self.current_shoulder_rpy = None
-        self.last_elbow_rpy = None
-        self.current_elbow_rpy = None
-
+        self.tf_waist = []
+        self.tf_shoulder = []
+        self.tf_elbow = []
 
         self.gest = Pose.REST
         self.pub_group_cmd = False
@@ -60,16 +50,13 @@ class Handler:
         self.group = moveit_commander.MoveGroupCommander("interbotix_arm", robot_description='px100/robot_description', ns='px100')
         self.gripper_group = moveit_commander.MoveGroupCommander("interbotix_gripper", robot_description='px100/robot_description', ns='px100')
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path', DisplayTrajectory, queue_size=1)
-
+        
         self.group.set_named_target("Home")
         self.group.go(wait=True)
         self.group.stop()
         current_joints = self.group.get_current_joint_values()
         self.last_target = current_joints.copy()
 
-        self.store_target = None
-        self.stored_goals = np.load('/home/laiy/gitrepos/myo_ws/goal.npy')
-        self.idx = 0
 
         self.add_table()
         self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 1)
@@ -78,10 +65,9 @@ class Handler:
         # self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
         # self.pred_sub = rospy.Subscriber('myo_lower/myo_pred', Int16, self.pred_callback)
         self.rest_bicep_sub = rospy.Subscriber('myo_upper/rest_bicep', Bool, self.rest_bicep_callback)
-        self.tf_rpy_pub = rospy.Publisher('tf_rpy', Float32MultiArray, queue_size=1)
+        self.tf_rpy_sub = rospy.Subscriber('tf_rpy', Float32MultiArray, self.tf_rpy_callback)
 
-        rospy.Timer(rospy.Duration(1/50), self.listen_tf) 
-        # rospy.Timer(rospy.Duration(1/25), self.pub_cmd) 
+        rospy.Timer(rospy.Duration(1/self.cmd_freq), self.pub_cmd) 
 
     def gest_callback(self, data):
         # print("myo_lower gest = ", Pose(data.data))
@@ -114,41 +100,39 @@ class Handler:
             print("elbow min")
         print("target = ", target)
 
-
-        # if self.store_target is None:
-        #     self.store_target = target
-        # else:
-        #     self.store_target = np.row_stack((self.store_target, target))
-        #     np.save('/home/laiy/gitrepos/myo_ws/goal.npy', np.array(self.store_target))
-
         return target
 
-    # def pub_cmd(self, event):
-    def pub_cmd(self):
+    def pub_cmd(self, event):
         self.check_pred()
-        if self.pub_group_cmd:
+        if self.pub_group_cmd or len(self.tf_waist)>self.cmd_freq/2:
             current_joints = self.group.get_current_joint_values()
             target = current_joints.copy()
-            # self.last_target = current_joints.copy()
-            target[0] = self.last_target[0] + self.K[0]*(self.current_waist_rpy[2] - self.last_waist_rpy[2])
-            target[1] = self.last_target[1] + self.K[1]*(self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1]) 
-            target[2] = self.last_target[2] + self.K[2]*(self.current_elbow_rpy[1] - self.last_elbow_rpy[1])
 
-            msg = Float32MultiArray()
-            msg.data = [self.current_waist_rpy[2] - self.last_waist_rpy[2],
-                        self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1],
-                        self.current_elbow_rpy[1] - self.last_elbow_rpy[1]]
-            self.tf_rpy_pub.publish(msg)
+            # moveit_robot_state = RobotState()
+            # joint_state = JointState()
+            # joint_state.header = Header()
+            # joint_state.header.stamp = rospy.Time.now()
+            # joint_state.name = ['waist', 'shoulder', 'elbow']
+            # joint_state.position = current_joints[:3]
+            # moveit_robot_state = RobotState()
+            # moveit_robot_state.joint_state = joint_state
+            # self.group.set_start_state(moveit_robot_state)
+            
+            # self.last_target = current_joints.copy()
+            target[0] = self.last_target[0] + self.K[0]*(sum(self.tf_waist))
+            target[1] = self.last_target[1] + self.K[1]*(sum(self.tf_shoulder)) 
+            target[2] = self.last_target[2] + self.K[2]*(sum(self.tf_elbow)) 
 
             target = self.check_joint_limits(target)
             self.last_target = target
 
-            self.group.set_joint_value_target(target)
-            self.execute_path() 
+            self.tf_waist = []
+            self.tf_shoulder = []
+            self.tf_elbow = []
 
-            # self.group.set_joint_value_target(self.stored_goals[self.idx])
-            # self.execute_path()
-            # self.idx+=1
+            # rospy.sleep(2)
+            self.group.set_joint_value_target(target)
+            self.execute_path(block=True) 
         else:
             if self.current_pred == MyoPred.WF or self.current_pred == MyoPred.WE:
                 if self.current_pred == MyoPred.WF:
@@ -169,37 +153,17 @@ class Handler:
                 self.gripper_group.go(wait=True)
             self.group.stop()
             self.group.clear_pose_targets()
-        
-    def listen_tf(self, event): 
-        try:
-            (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
-            self.last_waist_rpy = self.current_waist_rpy
-            if self.current_waist_rpy is None:
-                self.last_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
-                self.current_waist_rpy = self.last_waist_rpy
-            else:
-                self.current_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
-            
-            (trans, rot) = self.listener.lookupTransform('body', 'myo_upper', rospy.Time(0))
-            self.last_shoulder_rpy = self.current_shoulder_rpy
-            if self.current_shoulder_rpy is None:
-                self.last_shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
-                self.current_shoulder_rpy = self.last_shoulder_rpy
-            else:
-                self.current_shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
-                        
-            (trans, rot) = self.listener.lookupTransform('elbow', 'myo_lower', rospy.Time(0))
-            self.last_elbow_rpy = self.current_elbow_rpy
-            if self.current_elbow_rpy is None:
-                self.last_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
-                self.current_elbow_rpy = self.last_elbow_rpy
-            else:
-                self.current_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+ 
+    def tf_rpy_callback(self, data):
+        self.tf_waist.append(data.data[0])
+        self.tf_shoulder.append(data.data[1])
+        self.tf_elbow.append(data.data[2])
 
-            self.pub_cmd()
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            pass
-
+        if (len(self.tf_waist)>self.cmd_freq/2):
+            self.tf_waist.pop(0)
+            self.tf_shoulder.pop(0)
+            self.tf_elbow.pop(0)
+        # print("tf_rpy = ", self.tf_waist, self.tf_shoulder, self.tf_elbow)
 
     def add_table(self):
         """ Adds a table to the scene and display in rviz """
@@ -209,8 +173,7 @@ class Handler:
         p.pose.position.z = -0.025
         self.scene.add_box("table", p, (1, 1, 0.05))
 
-
-    def execute_path(self):
+    def execute_path(self, block):
         """ helper function for executing planned path in move group """ 
         # rospy.logdebug("Execute plan")
         # self.group.set_start_state_to_current_state()
@@ -226,7 +189,7 @@ class Handler:
         # rospy.loginfo(f"err code = {errCode}")
         # rospy.loginfo(f"plan = {plan}")
         # if frac > 0.8:
-        result = self.group.execute(plan, wait=True)
+        result = self.group.execute(plan, wait=block)
         self.group.stop()
         self.group.clear_pose_targets()
 
@@ -259,7 +222,6 @@ class Handler:
     def rest_bicep_callback(self, data):
         if data.data:
             self.K = [4, 2, 1.5]
-            # self.K = [4, 2, 1.5]
         else:
             self.K = [0.5, 1, 0.7]
 

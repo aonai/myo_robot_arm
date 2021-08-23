@@ -2,8 +2,9 @@
   <arg name="use_fake" default="false"/>
   <arg name="use_actual" default="false"/>
 
+  <rosparam param="cmd_freq">50</rosparam>
+
   <include file="$(find arm_control)/launch/moveit/xsarm_moveit.launch">
-  <!-- <include file="$(find interbotix_xsarm_moveit)/launch/xsarm_moveit.launch"> -->
     <arg name="use_fake" value="true"  if="$(arg use_fake)"/>
     <arg name="use_actual" value="true"  if="$(arg use_actual)"/>
     <arg name="robot_model" value="px100"/>
@@ -11,17 +12,17 @@
   </include>
 
 
-  <!-- <remap from="joint_states" to="px100/joint_states" /> -->
   <node name="listen_myo" pkg="arm_control" type="listen_myo" />
+  <node name="listen_tf" pkg="arm_control" type="listen_tf" />
   <node name="process_emg" pkg="arm_control" type="process_emg" />
   <node name="control_robot" pkg="arm_control" type="control_robot" output="screen"/>
 
-  <node name="waist_command"
+  <!-- <node name="waist_command"
       pkg="rqt_plot"
       type="rqt_plot"
       args="/myo_upper/pose/pose/orientation/x
           /px100/arm_controller/state/desired/positions[0]
-          /px100/arm_controller/state/actual/positions[0]"/>
+          /px100/arm_controller/state/actual/positions[0]"/> -->
 
   <!-- <node name="shoulder_command"
       pkg="rqt_plot"

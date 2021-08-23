@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import rospy
+import tf
+from tf.transformations import euler_from_quaternion
+from std_msgs.msg import Float32MultiArray
+
+
+class Handler:
+    def __init__(self):
+        self.listener = tf.TransformListener()
+
+        self.last_waist_rpy = None
+        self.current_waist_rpy = None
+        self.last_shoulder_rpy = None
+        self.current_shoulder_rpy = None
+        self.last_elbow_rpy = None
+        self.current_elbow_rpy = None
+        
+        self.tf_rpy_pub = rospy.Publisher('tf_rpy', Float32MultiArray, queue_size=1)
+        rospy.Timer(rospy.Duration(1/50), self.listen_tf) 
+
+
+    def listen_tf(self, event): 
+        try:
+            (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
+            self.last_waist_rpy = self.current_waist_rpy
+            if self.current_waist_rpy is None:
+                self.last_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                self.current_waist_rpy = self.last_waist_rpy
+            else:
+                self.current_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+            
+            (trans, rot) = self.listener.lookupTransform('body', 'myo_upper', rospy.Time(0))
+            self.last_shoulder_rpy = self.current_shoulder_rpy
+            if self.current_shoulder_rpy is None:
+                self.last_shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                self.current_shoulder_rpy = self.last_shoulder_rpy
+            else:
+                self.current_shoulder_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                        
+            (trans, rot) = self.listener.lookupTransform('elbow', 'myo_lower', rospy.Time(0))
+            self.last_elbow_rpy = self.current_elbow_rpy
+            if self.current_elbow_rpy is None:
+                self.last_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+                self.current_elbow_rpy = self.last_elbow_rpy
+            else:
+                self.current_elbow_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))
+
+            msg = Float32MultiArray()
+            msg.data = [self.current_waist_rpy[2] - self.last_waist_rpy[2],
+                        self.current_shoulder_rpy[1] - self.last_shoulder_rpy[1],
+                        self.current_elbow_rpy[1] - self.last_elbow_rpy[1]]
+            self.tf_rpy_pub.publish(msg)
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            msg = Float32MultiArray()
+            msg.data = [0, 0, 0]
+            self.tf_rpy_pub.publish(msg)
+
+
+
+def main():
+    """ The main() function. """
+    rospy.init_node('listen_tf')
+    handler = Handler()
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except rospy.ROSInterruptException:
+        pass

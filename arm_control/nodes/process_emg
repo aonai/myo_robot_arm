@@ -28,8 +28,9 @@ class Handler:
         self.raw_emg = None
         self.upper_emg_at_rest = None
         self.start_record = False
-        self.rest_thresh = None
+        self.rest_thresh = 1.78
         self.gest = None
+        self.rest_bicep_tmp = []
 
         self.longterm_myo_names = ['REST', 'WF', 'WE', 'RD', 'UD', 'FP', 'FS', 'HC', 'FP & WF', 'FP & WE',
                                     'FP & RD', 'FP & UD', 'FS & WF', 'FS & WE', 'FS & RD', 'FS & UD', 'HC & WF',
@@ -133,13 +134,21 @@ class Handler:
         self.pred_pub.publish(msg)
 
         msg = Bool()
-        if self.rest_thresh is None: # assume bicep is always at rest when no thresh is recorded 
+        if self.rest_thresh is None or not self.raw_emg: # assume bicep is always at rest when no thresh is recorded 
             msg.data = True
         else:
             m = np.mean(self.raw_emg)
             std = np.std(self.raw_emg)
             # print("bicep ", m+std, " vs ", self.rest_thresh, " = ", np.abs(m+std) > self.rest_thresh)
-            msg.data = False if np.abs(m+std) > self.rest_thresh else True
+            rest_bicep = False if np.abs(m+std) > 2*self.rest_thresh else True
+            msg.data = True
+            self.rest_bicep_tmp.append(rest_bicep)
+            if not rest_bicep == self.rest_bicep_tmp[-1]: 
+                self.rest_bicep_tmp = []
+            else:
+                if len(self.rest_bicep_tmp) >= 10 and not rest_bicep:
+                    msg.data = False
+
         self.bicep_pub.publish(msg)
 
     def record_upper_callback(self, res):

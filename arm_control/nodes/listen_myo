@@ -29,7 +29,7 @@ class Handler:
         self.lower_rpy = None
         self.upper_rpy = None
         # tresh = positioned (at T shaped) - relaxed
-        self.tresh = [0, 0, 0]
+        self.thresh = 3.14/4
         self.positioned_rpy = None
         self.relaxed_rpy = None
 
@@ -53,17 +53,10 @@ class Handler:
         world_body_tf.transform.rotation.z = body_q[2]
         world_body_tf.transform.rotation.w = body_q[3]
         static_broadcaster.sendTransform(world_body_tf)
-        
-        world_body_tf = TransformStamped()
-        world_body_tf.header.stamp = rospy.Time.now()
-        world_body_tf.header.frame_id = "body"
-        world_body_tf.child_frame_id = "shoulder"
-        world_body_tf.transform.rotation.w = 1
-        static_broadcaster.sendTransform(world_body_tf)
 
         should_upper_tf = TransformStamped()
         should_upper_tf.header.stamp = rospy.Time.now()
-        should_upper_tf.header.frame_id = "shoulder"
+        should_upper_tf.header.frame_id = "body"
         should_upper_tf.child_frame_id = "myo_upper"
         should_upper_tf.transform.rotation.x = pose_orientation[0]
         should_upper_tf.transform.rotation.y = pose_orientation[1]
@@ -117,26 +110,13 @@ class Handler:
         x_q = quaternion_from_euler(-self.lower_rpy[0],0,0)
         pose_orientation = quaternion_multiply(pose_q, x_q)
 
-
         static_broadcaster = tf2_ros.StaticTransformBroadcaster()
-        lower_lower_tf = TransformStamped()
-        lower_lower_tf.header.stamp = rospy.Time.now()
-        lower_lower_tf.header.frame_id = "elbow_orientated"
-        lower_lower_tf.child_frame_id = "elbow_tresh"
-        elbow_tresh = quaternion_from_euler(*self.tresh)
-        lower_lower_tf.transform.rotation.x = elbow_tresh[0]
-        lower_lower_tf.transform.rotation.y = elbow_tresh[1]
-        lower_lower_tf.transform.rotation.z = elbow_tresh[2]
-        lower_lower_tf.transform.rotation.w = elbow_tresh[3]
-        static_broadcaster.sendTransform(lower_lower_tf)
-
         world_body_tf = TransformStamped()
         world_body_tf.header.stamp = rospy.Time.now()
-        world_body_tf.header.frame_id = "elbow_tresh"
+        world_body_tf.header.frame_id = "elbow_orientated"
         world_body_tf.child_frame_id = "elbow_z"
         if self.upper_rpy is not None and self.lower_rpy is not None:
-        # body_q = quaternion_from_euler(0, 0, 3.14-self.lower_rpy[0])
-            body_q = quaternion_from_euler(0, 0, -3.14/2.5+self.upper_rpy[0]-self.lower_rpy[0])
+            body_q = quaternion_from_euler(0, 0, self.thresh+self.upper_rpy[0]-self.lower_rpy[0])
         else:
             body_q = quaternion_from_euler(0, 0, 0)
         world_body_tf.transform.rotation.x = body_q[0]
@@ -171,19 +151,19 @@ class Handler:
         upper_elbow_tf.transform.rotation.w = q_wrist[3]
         static_broadcaster.sendTransform(upper_elbow_tf)
 
-        upper_elbow_tf = TransformStamped()
-        upper_elbow_tf.header.stamp = rospy.Time.now()
-        upper_elbow_tf.header.frame_id = "wrist"
-        upper_elbow_tf.child_frame_id = "wrist_orientated"
-        wrist_reversed = quaternion_from_euler(0, -3.14/2, 0)
-        pose_reversed = list(pose_orientation).copy()
-        pose_reversed[3] *= -1
-        q = quaternion_multiply(wrist_reversed, pose_reversed)
-        upper_elbow_tf.transform.rotation.x = q[0]
-        upper_elbow_tf.transform.rotation.y = q[1]
-        upper_elbow_tf.transform.rotation.z = q[2]
-        upper_elbow_tf.transform.rotation.w = q[3]
-        static_broadcaster.sendTransform(upper_elbow_tf)
+        # upper_elbow_tf = TransformStamped()
+        # upper_elbow_tf.header.stamp = rospy.Time.now()
+        # upper_elbow_tf.header.frame_id = "wrist"
+        # upper_elbow_tf.child_frame_id = "wrist_orientated"
+        # wrist_reversed = quaternion_from_euler(0, -3.14/2, 0)
+        # pose_reversed = list(pose_orientation).copy()
+        # pose_reversed[3] *= -1
+        # q = quaternion_multiply(wrist_reversed, pose_reversed)
+        # upper_elbow_tf.transform.rotation.x = q[0]
+        # upper_elbow_tf.transform.rotation.y = q[1]
+        # upper_elbow_tf.transform.rotation.z = q[2]
+        # upper_elbow_tf.transform.rotation.w = q[3]
+        # static_broadcaster.sendTransform(upper_elbow_tf)
         
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
@@ -199,7 +179,6 @@ class Handler:
     def align(self, req):
         print("Trying to align axis")
         print("Compare lower vs upper: ", self.lower_rpy, ' --- ', self.upper_rpy)
-
         if req.data:
             msg="Record relaxed rpy"
             self.relaxed_rpy = self.lower_rpy
@@ -208,8 +187,8 @@ class Handler:
             self.positioned_rpy = self.lower_rpy
         
         if not self.relaxed_rpy is None and not self.positioned_rpy is None:
-            for i in range(3):  
-                self.tresh[i] = self.positioned_rpy[i] - self.relaxed_rpy[i]
+            i = 0
+            self.thresh += self.relaxed_rpy[i] - self.positioned_rpy[i] 
             print("Aligned with thresh ", self.thresh)
 
         return True, msg
