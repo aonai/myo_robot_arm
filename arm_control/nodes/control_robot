@@ -29,6 +29,8 @@ class MyoPred(enum.Enum):
 class Handler:
     def __init__(self):
         self.cmd_freq = rospy.get_param('cmd_freq')
+        self.listen_tf_period = rospy.get_param('listen_tf_period')
+        self.listen_tf_period = int(self.listen_tf_period*50)
         self.PI = 3.1415926
         self.K = [4, 2, 1.5]
         self.joint_state = None
@@ -104,7 +106,7 @@ class Handler:
 
     def pub_cmd(self, event):
         self.check_pred()
-        if self.pub_group_cmd or len(self.tf_waist)>self.cmd_freq/2:
+        if self.pub_group_cmd or len(self.tf_waist)>self.listen_tf_period:
             current_joints = self.group.get_current_joint_values()
             target = current_joints.copy()
 
@@ -159,7 +161,7 @@ class Handler:
         self.tf_shoulder.append(data.data[1])
         self.tf_elbow.append(data.data[2])
 
-        if (len(self.tf_waist)>self.cmd_freq/2):
+        if (len(self.tf_waist)>self.listen_tf_period):
             self.tf_waist.pop(0)
             self.tf_shoulder.pop(0)
             self.tf_elbow.pop(0)
