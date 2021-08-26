@@ -7,11 +7,11 @@ project(connect_myo)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS 
+find_package(catkin REQUIRED COMPONENTS
+    geometry_msgs 
     rospy
-    std_msgs
-    geometry_msgs
     sensor_msgs
+    std_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -108,9 +108,9 @@ catkin_package(
 #  LIBRARIES connect_myo
 #  CATKIN_DEPENDS other_catkin_pkg
 #  DEPENDS system_lib
-    CATKIN_DEPENDS std_msgs
     CATKIN_DEPENDS geometry_msgs
     CATKIN_DEPENDS sensor_msgs
+    CATKIN_DEPENDS std_msgs
 
 )
 

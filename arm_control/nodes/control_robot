@@ -1,49 +1,81 @@
 #!/usr/bin/env python3
+"""
+Controls a PincherX 100 robot using two myo armbands. 
+This node is going to start the robot at its HOME position. The robot waist, shoulder, and 
+elbow joints are controlled by right arm shoulder and elbow movements. The robot wrist joint 
+and gripper are controlled by right hand gesture predictions. By default, this node sends 
+out MoveIt command at 50Hz while the command angles are dependent on right arm movements in 
+the past 0.5 seconds. When the biceps are activated, control gains of waist, 
+shoulder, and elbow joints are lowered to enable more precise control. 
+
+PUBLISHERS: 
+  + px100/commands/joint_group (JointGroupCommand) ~ a group of joint angle commands to be sent to the robot;
+                                                    this is used for publishing waist, shoulder, and elbow commands.
+  + px100/commands/joint_single (JointSingleCommand) ~ single joint angle command to be sent to the robot;
+                                                        this is used for publishing wrist command.          
+SUBSRIBERS:
+  + px100/joint_states (JointState) ~ joint state of the robot; include robot joint positions and names 
+  + myo_lower/myo_pred (Int16) ~ gesture index predicted by `process_emg`
+  + myo_upper/rest_bicep (Bool) ~ whether biceps are at rest 
+  + tf_rpy (Float32MultiArray) ~ a list of controlling angles for waist, shoulder, and elbow commands generated at 50Hz
+
+PARAMETERS:
+  + cmd_freq (double) ~ robot command publishing frequency 
+  + listen_tf_period (double) ~ how long the node should keep records of the controlling angles; the final
+                                controlling angles used to calculate command angles are their sums.  
+
+"""
+
 import rospy
 import enum
 import numpy as np
 import moveit_commander
 from geometry_msgs.msg import PoseStamped, Pose
-from moveit_msgs.msg import MoveItErrorCodes, DisplayTrajectory, RobotState
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool, Float32MultiArray
 from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
-from std_msgs.msg import Bool, Float32MultiArray, Header
+from moveit_msgs.msg import DisplayTrajectory
 
 
-class Pose(enum.Enum):
-    REST = 0
-    FIST = 1
-    WAVE_IN = 2
-    WAVE_OUT = 3
-    FINGERS_SPREAD = 4
-    THUMB_TO_PINKY = 5
-    UNKNOWN = 255
+# class Pose(enum.Enum):
+#     """ Gesture prediction index of myo's default classifier """
+#     REST = 0
+#     FIST = 1
+#     WAVE_IN = 2
+#     WAVE_OUT = 3
+#     FINGERS_SPREAD = 4
+#     THUMB_TO_PINKY = 5
+#     UNKNOWN = 255
 
 class MyoPred(enum.Enum):
+    """ Gesture prediction index of long-term myo classifier """
     REST = 0
-    WF = 1
-    WE = 2
-    RD = 3
-    UD = 4
+    WF = 1      # wrist extension
+    WE = 2      # wrist flexion
+    RD = 3      # radial deviation
+    UD = 4      # ulnar deviation 
 
 class Handler:
     def __init__(self):
+        """ Helper class for node control_robot.
+        Controls a PincherX 100 robot using two myo armbands and one Long-term myo classifier. 
+        """
+        # robot control params 
         self.cmd_freq = rospy.get_param('cmd_freq')
         self.listen_tf_period = rospy.get_param('listen_tf_period')
-        self.listen_tf_period = int(self.listen_tf_period*50)
-        self.PI = 3.1415926
-        self.K = [4, 2, 1.5]
-        self.joint_state = None
+        self.listen_tf_period = int(self.listen_tf_period*self.cmd_freq)
+        # self.PI = 3.1415926
+        self.pub_group_cmd = False          
+        self.PI = np.pi
+        self.K = [4, 2, 1.5]                # control gain for robot's waist, shoulder, and elbow joints
         self.tf_waist = []
         self.tf_shoulder = []
         self.tf_elbow = []
-
-        self.gest = Pose.REST
-        self.pub_group_cmd = False
+        self.gest = Pose.REST               # gesture predicted by the default classifier 
         self.tmp_pred = []
-        self.current_pred = MyoPred.REST
+        self.current_pred = MyoPred.REST    # gesture predicted by the long-term myo classifier 
 
-        self.errCode = MoveItErrorCodes.FAILURE 
+        # robot command params 
         self.joint_state = None
         self.joint_state_name = None
         self.first_js = None
@@ -53,14 +85,17 @@ class Handler:
         self.gripper_group = moveit_commander.MoveGroupCommander("interbotix_gripper", robot_description='px100/robot_description', ns='px100')
         self.display_trajectory_publisher = rospy.Publisher('/move_group/display_planned_path', DisplayTrajectory, queue_size=1)
         
+        # move robot to HOME position and record current joints as the starting trajectory point
         self.group.set_named_target("Home")
         self.group.go(wait=True)
         self.group.stop()
         current_joints = self.group.get_current_joint_values()
         self.last_target = current_joints.copy()
 
-
+        # add table in rviz for collision detection
         self.add_table()
+
+        # ROS params 
         self.cmd_pub = rospy.Publisher('px100/commands/joint_group', JointGroupCommand, queue_size = 1)
         self.single_cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 1)
         self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
@@ -71,56 +106,72 @@ class Handler:
 
         rospy.Timer(rospy.Duration(1/self.cmd_freq), self.pub_cmd) 
 
-    def gest_callback(self, data):
-        # print("myo_lower gest = ", Pose(data.data))
-        # print("name = ", self.joint_state_name)
+    # def gest_callback(self, data):
+    #     """ Callback function for gesture predicted by the default myo classifier
+    #     If hand is not at rest, then switch to publishing single joint or gripper command. 
 
-        self.gest = Pose(data.data)
-        if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
-            self.pub_group_cmd = True
-        else: 
-            self.pub_group_cmd = False
+    #         Args:
+    #             data (Int16) - gesture index; refer to class Pose for details
+    #     """
+    #     # print("myo_lower gest = ", Pose(data.data))
+    #     # print("name = ", self.joint_state_name)
+
+    #     self.gest = Pose(data.data)
+    #     if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
+    #         self.pub_group_cmd = True
+    #     else: 
+    #         self.pub_group_cmd = False
     
     def check_joint_limits(self, target):
-        if target[0] > self.PI:
-            target[0] = -2*self.PI + target[0] 
-        elif target[0] < -self.PI:
-            target[0] = 2*self.PI + target[0]
+        """ Helper function for limiting joint commands within the robot's ranges
+        If target is out of range, set the command angle to max/min.  
+        
+        Refer to http://support.interbotix.com/html/specifications/px100.html#pincherx-100
+            Waist: -180 ~ 180 degree
+            Shoulder: -111 ~ 107 degree
+            Elbow: -121 ~ 92 degree
+        
+            Args:
+                target (list of double) ~ list if command angles for waist, shoulder, and elbow
+            
+            Returns:
+                target (list of double) ~ list if command angles for waist, shoulder, and elbow
+                                            that are within range
+        """
+        # waist 
+        if target[0] > 170*self.PI/180:
+            target[0] = 170*self.PI/180 
+        elif target[0] < -170*self.PI/180:
+            target[0] = -170*self.PI/180
 
+        # shoulder 
         if target[1] > 100*self.PI/180:
             target[1] = 100*self.PI/180 
-            print("elbow max")
-        elif target[1] < -105*self.PI/180:
-            target[1] = -105*self.PI/180
-            print("elbow min")
+        elif target[1] < -100*self.PI/180:
+            target[1] = -100*self.PI/180
 
+        # elbow
         if target[2] > 80*self.PI/180:
             target[2] = 80*self.PI/180
-            print("elbow max")
-        elif target[2] < -100*self.PI/180:
-            target[2] = -100*self.PI/180
-            print("elbow min")
+        elif target[2] < -110*self.PI/180:
+            target[2] = -110*self.PI/180
+
         print("target = ", target)
 
         return target
 
     def pub_cmd(self, event):
+        """ Helper function for publishing command messages to the robot
+        Check the current hand gestures. If hand is at rest, generate command angles
+        for waist, shoulder, and elbow joints and execute a blocking command. If hand
+        is at WE or WE, move the robot's wrist up or down. If hand is at RD or UD, open
+        or close the gripper. 
+        """
         self.check_pred()
-        if self.pub_group_cmd or len(self.tf_waist)>self.listen_tf_period:
+        # if self.pub_group_cmd or len(self.tf_waist)>self.listen_tf_period:
+        if self.pub_group_cmd: # publish waist, shoulder, and elbow commands 
             current_joints = self.group.get_current_joint_values()
             target = current_joints.copy()
-
-            # moveit_robot_state = RobotState()
-            # joint_state = JointState()
-            # joint_state.header = Header()
-            # joint_state.header.stamp = rospy.Time.now()
-            # joint_state.name = ['waist', 'shoulder', 'elbow']
-            # joint_state.position = current_joints[:3]
-            # moveit_robot_state = RobotState()
-            # moveit_robot_state.joint_state = joint_state
-            # self.group.set_start_state(moveit_robot_state)
-            
-            # self.last_target = current_joints.copy()
             target[0] = self.last_target[0] + self.K[0]*(sum(self.tf_waist))
             target[1] = self.last_target[1] + self.K[1]*(sum(self.tf_shoulder)) 
             target[2] = self.last_target[2] + self.K[2]*(sum(self.tf_elbow)) 
@@ -132,20 +183,16 @@ class Handler:
             self.tf_shoulder = []
             self.tf_elbow = []
 
-            # rospy.sleep(2)
             self.group.set_joint_value_target(target)
-            self.execute_path(block=True) 
-        else:
+            self.execute_path() 
+        else:   # publish wrist or gripper command
             if self.current_pred == MyoPred.WF or self.current_pred == MyoPred.WE:
-                if self.current_pred == MyoPred.WF:
-                    k = 1
-                else:
-                    k =  -1            
+                k = 1 if self.current_pred == MyoPred.WF else -1
                 cmd_msg = JointSingleCommand()
                 cmd_msg.name = self.joint_state_name[3]
                 print("JS = ", self.joint_state)
                 cmd_msg.cmd = self.joint_state[3] + 0.1*k
-                print("command 1 = ", cmd_msg)
+                print("command = ", cmd_msg)
                 self.single_cmd_pub.publish(cmd_msg)
             elif self.current_pred == MyoPred.UD:
                 self.gripper_group.set_named_target("Closed")
@@ -153,10 +200,16 @@ class Handler:
             elif self.current_pred == MyoPred.RD:
                 self.gripper_group.set_named_target("Open")
                 self.gripper_group.go(wait=True)
-            self.group.stop()
-            self.group.clear_pose_targets()
  
     def tf_rpy_callback(self, data):
+        """ Callback function for recording controlling angles 
+        Record a list of controlling angles for waist, shoulder, and elbow. 
+        Data from the previous self.listen_tf_period amount of time (default is 
+        0.5 second) is recorded. 
+
+            Args:
+                data (Float32MultiArray) - list of controlling angles 
+        """
         self.tf_waist.append(data.data[0])
         self.tf_shoulder.append(data.data[1])
         self.tf_elbow.append(data.data[2])
@@ -175,27 +228,27 @@ class Handler:
         p.pose.position.z = -0.025
         self.scene.add_box("table", p, (1, 1, 0.05))
 
-    def execute_path(self, block):
-        """ helper function for executing planned path in move group """ 
-        # rospy.logdebug("Execute plan")
-        # self.group.set_start_state_to_current_state()
-        # self.group.set_random_target()
+    def execute_path(self):
+        """ Helper function for executing planned path in move group """ 
         (result, plan, frac, errCode) = self.group.plan()
-        # plan = self.group.go(joints = self.last_target, wait=False)
-        # print("frac = ", frac)
+        # display desired trajectory in rviz
         display_trajectory = DisplayTrajectory()
         display_trajectory.trajectory_start = self.robot.get_current_state()
         display_trajectory.trajectory.append(plan)
         self.display_trajectory_publisher.publish(display_trajectory)
-        # rospy.sleep(1.0)
-        # rospy.loginfo(f"err code = {errCode}")
-        # rospy.loginfo(f"plan = {plan}")
-        # if frac > 0.8:
-        result = self.group.execute(plan, wait=block)
+        # execute command on the real robot 
+        result = self.group.execute(plan, wait=True)
         self.group.stop()
         self.group.clear_pose_targets()
 
     def joint_callback(self, data):
+        """ Callback function for updating current joint states
+        Also saves a list of robot's joint names. 
+
+            Args:
+                data (JointState) - joint state of the robot; 
+                                    include robot joint positions and names 
+        """
         self.joint_state = list(data.position)
         # rospy.loginfo(f"joints = {self.joint_state}")
         if self.first_js is None:
@@ -204,13 +257,27 @@ class Handler:
             # print("name = ", self.joint_state_name)
        
     def pred_callback(self, data):
+        """ Callback function for recording hand gesture prediction 
+        Record a list of gestures. Data from the previous self.listen_tf_period 
+        amount of time (default is 0.5 second) is recorded. 
+
+            Args:
+                data (Int16) - gesture index predicted by the long-term myo classifier 
+        """
         pred = data.data
         self.tmp_pred.append(pred)
+        if (len(self.tmp_pred)>self.listen_tf_period):
+            self.tmp_pred.pop(0)
     
     def check_pred(self):
+        """ Helper function for checking the dominant gesture
+        Check which gesture is observed the most in the past self.listen_tf_period amount
+        of time (default is 0.5 second). If a gesture appears in 90% of the list, then
+        it is considered dominant. 
+        """
         counts = np.unique(self.tmp_pred, return_counts=True)
         print(self.tmp_pred)
-        print("Counts = ", counts)
+        # print("Counts = ", counts)
         for idx, observed_pred in enumerate(counts[0]): 
             if counts[1][idx] > len(self.tmp_pred)*0.9:
                 self.current_pred = MyoPred(observed_pred)
@@ -219,9 +286,15 @@ class Handler:
                 self.current_pred = MyoPred.REST
         self.tmp_pred = []
         self.pub_group_cmd = True if self.current_pred == MyoPred.REST else False
-        print("Pred = ", self.current_pred, " pub group ", self.pub_group_cmd)
+        # print("Pred = ", self.current_pred, " pub group ", self.pub_group_cmd)
     
     def rest_bicep_callback(self, data):
+        """ Callback function for checking whether biceps are at rest
+        If the biceps are activated, lower the control gains. 
+
+            Args:
+                data (Bool) - whether upper arm biceps are at rest 
+        """
         if data.data:
             self.K = [4, 2, 1.5]
         else:

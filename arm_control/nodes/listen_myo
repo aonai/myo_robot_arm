@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """
-This node is going to attach a table under a px100 robot in rviz. It will also initiates three services to let 
-user control the robot using predefined positions, user specified positions, or stored positions.
+Listens to orientation information published by `connect_myo` and generates tf and markers in rviz to simulate arm motion.
+The waist tf is configured from upper myo's roll angle. The shoulder tf is configured from upper myo's roll, pitch, yaw
+angles. The elbow tf is configured from the difference between two myo's roll angles plus lower myo's roll, pitch, yaw angles. 
+
+PUBLISHERS:
+  + visualization_marker (Marker) ~ marker to simulate lower or upper arm
+
+SUBSRIBERS:
+  + myo_lower/pose
+    myo_upper/pose (PoseStamped) ~ normalized pose of myo; i.e. normalized orientation of myo 
+                                    in radian quaternion format
 
 SERVICES:
-  + reset (Empty) ~ controls the px100 robot to move a box placed at (0.13, 0.13, 0.125) to (0.13, -0.13, 0.125), and then 
-                        goes back to home position without hitting the box. Provides option to clear a set of stored waypoints.
+  + align (SetBool) ~ align lower and upper arms by adding the difference between relaxed and positioned roll angle;
+                        this allows the arm markers to be close to straight when user's arm is held straight
 """
 
 import rospy
-import sys
-import tf
 import tf2_ros
 from geometry_msgs.msg import Quaternion, Vector3, PoseStamped, Point, Pose, TransformStamped
-from sensor_msgs.msg import Imu
 from tf.transformations import quaternion_from_euler, quaternion_multiply, euler_from_quaternion
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
@@ -21,31 +27,40 @@ from std_srvs.srv import SetBool
 
 class Handler:
     def __init__(self):
-        self.lower_pose_sub = rospy.Subscriber('myo_lower/pose', PoseStamped, self.imu_lower_callback)
-        self.upper_pose_sub = rospy.Subscriber('myo_upper/pose', PoseStamped, self.imu_upper_callback)
+        """ Helper class for node listen_myo.
+        Listens to myo messages and simulates arm motion in rviz. 
+        """
+        self.lower_pose_sub = rospy.Subscriber('myo_lower/pose', PoseStamped, self.pose_lower_callback)
+        self.upper_pose_sub = rospy.Subscriber('myo_upper/pose', PoseStamped, self.pose_upper_callback)
         self.marker_pub = rospy.Publisher("visualization_marker", Marker, queue_size=10)
         self.align = rospy.Service('align', SetBool, self.align)
 
         self.lower_rpy = None
         self.upper_rpy = None
-        # tresh = positioned (at T shaped) - relaxed
-        self.thresh = 3.14/1.5
+        
+        self.thresh = 3.14/1.5          # tresh = positioned (at T shaped) - relaxed
         self.positioned_rpy = None
         self.relaxed_rpy = None
 
-    def imu_upper_callback(self, data):
+    def pose_upper_callback(self, data):
+        """ Callback function for upper arm tf and markers
+        If the muscles are activated, lower the control gains. 
+
+            Args:
+                data (PoseStamped) - normalized pose of myo; i.e. normalized orientation of myo 
+                                    in radian quaternion format
+        """
         pose_q = (data.pose.orientation.x, data.pose.orientation.y, data.pose.orientation.z, data.pose.orientation.w)
         
         self.upper_rpy = euler_from_quaternion(pose_q)
         x_q = quaternion_from_euler(-self.upper_rpy[0], 0, 0)
         pose_orientation = quaternion_multiply(pose_q, x_q)
 
-
         static_broadcaster = tf2_ros.StaticTransformBroadcaster()
 
         world_body_tf = TransformStamped()
         world_body_tf.header.stamp = rospy.Time.now()
-        world_body_tf.header.frame_id = "myo_raw"
+        world_body_tf.header.frame_id = "world"
         world_body_tf.child_frame_id = "body"
         body_q = quaternion_from_euler(0, 0, -self.upper_rpy[0])
         world_body_tf.transform.rotation.x = body_q[0]
@@ -54,15 +69,15 @@ class Handler:
         world_body_tf.transform.rotation.w = body_q[3]
         static_broadcaster.sendTransform(world_body_tf)
 
-        should_upper_tf = TransformStamped()
-        should_upper_tf.header.stamp = rospy.Time.now()
-        should_upper_tf.header.frame_id = "body"
-        should_upper_tf.child_frame_id = "myo_upper"
-        should_upper_tf.transform.rotation.x = pose_orientation[0]
-        should_upper_tf.transform.rotation.y = pose_orientation[1]
-        should_upper_tf.transform.rotation.z = pose_orientation[2]
-        should_upper_tf.transform.rotation.w = pose_orientation[3]
-        static_broadcaster.sendTransform(should_upper_tf)
+        body_upper_tf = TransformStamped()
+        body_upper_tf.header.stamp = rospy.Time.now()
+        body_upper_tf.header.frame_id = "body"
+        body_upper_tf.child_frame_id = "myo_upper"
+        body_upper_tf.transform.rotation.x = pose_orientation[0]
+        body_upper_tf.transform.rotation.y = pose_orientation[1]
+        body_upper_tf.transform.rotation.z = pose_orientation[2]
+        body_upper_tf.transform.rotation.w = pose_orientation[3]
+        static_broadcaster.sendTransform(body_upper_tf)
 
         upper_elbow_tf = TransformStamped()
         upper_elbow_tf.header.stamp = rospy.Time.now()
@@ -78,19 +93,19 @@ class Handler:
         upper_elbow_tf.transform.rotation.w = q_elbow[3]
         static_broadcaster.sendTransform(upper_elbow_tf)
 
-        upper_elbow_tf = TransformStamped()
-        upper_elbow_tf.header.stamp = rospy.Time.now()
-        upper_elbow_tf.header.frame_id = "elbow"
-        upper_elbow_tf.child_frame_id = "elbow_orientated"
+        elbow_tf = TransformStamped()
+        elbow_tf.header.stamp = rospy.Time.now()
+        elbow_tf.header.frame_id = "elbow"
+        elbow_tf.child_frame_id = "elbow_orientated"
         elbow_reversed = quaternion_from_euler(0, -3.14/2, 0)
         pose_reversed = list(pose_orientation).copy()
         pose_reversed[3] *= -1
         q = quaternion_multiply(elbow_reversed, pose_reversed)
-        upper_elbow_tf.transform.rotation.x = q[0]
-        upper_elbow_tf.transform.rotation.y = q[1]
-        upper_elbow_tf.transform.rotation.z = q[2]
-        upper_elbow_tf.transform.rotation.w = q[3]
-        static_broadcaster.sendTransform(upper_elbow_tf)
+        elbow_tf.transform.rotation.x = q[0]
+        elbow_tf.transform.rotation.y = q[1]
+        elbow_tf.transform.rotation.z = q[2]
+        elbow_tf.transform.rotation.w = q[3]
+        static_broadcaster.sendTransform(elbow_tf)
 
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
@@ -103,7 +118,14 @@ class Handler:
         marker.scale = Vector3(x=0.5, y=0.5, z=2)
         self.marker_pub.publish(marker)
 
-    def imu_lower_callback(self, data):
+    def pose_lower_callback(self, data):
+        """ Callback function for lower arm tf and markers
+        If the muscles are activated, lower the control gains. 
+
+            Args:
+                data (PoseStamped) - normalized pose of myo; i.e. normalized orientation of myo 
+                                    in radian quaternion format
+        """
         pose_q = (data.pose.orientation.x, data.pose.orientation.y, data.pose.orientation.z, data.pose.orientation.w)
         
         self.lower_rpy = euler_from_quaternion(pose_q)
@@ -111,60 +133,45 @@ class Handler:
         pose_orientation = quaternion_multiply(pose_q, x_q)
 
         static_broadcaster = tf2_ros.StaticTransformBroadcaster()
-        world_body_tf = TransformStamped()
-        world_body_tf.header.stamp = rospy.Time.now()
-        world_body_tf.header.frame_id = "elbow_orientated"
-        world_body_tf.child_frame_id = "elbow_z"
+
+        elbow_tf_2 = TransformStamped()
+        elbow_tf_2.header.stamp = rospy.Time.now()
+        elbow_tf_2.header.frame_id = "elbow_orientated"
+        elbow_tf_2.child_frame_id = "elbow_z"
         if self.upper_rpy is not None and self.lower_rpy is not None:
             body_q = quaternion_from_euler(0, 0, self.thresh+self.upper_rpy[0]-self.lower_rpy[0])
         else:
             body_q = quaternion_from_euler(0, 0, 0)
-        world_body_tf.transform.rotation.x = body_q[0]
-        world_body_tf.transform.rotation.y = body_q[1]
-        world_body_tf.transform.rotation.z = body_q[2]
-        world_body_tf.transform.rotation.w = body_q[3]
-        static_broadcaster.sendTransform(world_body_tf)
+        elbow_tf_2.transform.rotation.x = body_q[0]
+        elbow_tf_2.transform.rotation.y = body_q[1]
+        elbow_tf_2.transform.rotation.z = body_q[2]
+        elbow_tf_2.transform.rotation.w = body_q[3]
+        static_broadcaster.sendTransform(elbow_tf_2)
         
+        elbow_lower_tf = TransformStamped()
+        elbow_lower_tf.header.stamp = rospy.Time.now()
+        elbow_lower_tf.header.frame_id = "elbow_z"
+        elbow_lower_tf.child_frame_id = "myo_lower"
+        elbow_lower_tf.transform.rotation.x = pose_orientation[0]
+        elbow_lower_tf.transform.rotation.y = pose_orientation[1]
+        elbow_lower_tf.transform.rotation.z = pose_orientation[2]
+        elbow_lower_tf.transform.rotation.w = pose_orientation[3]
+        static_broadcaster.sendTransform(elbow_lower_tf)
 
-        static_broadcaster = tf2_ros.StaticTransformBroadcaster()
-        lower_lower_tf = TransformStamped()
-        lower_lower_tf.header.stamp = rospy.Time.now()
-        lower_lower_tf.header.frame_id = "elbow_z"
-        lower_lower_tf.child_frame_id = "myo_lower"
-        lower_lower_tf.transform.rotation.x = pose_orientation[0]
-        lower_lower_tf.transform.rotation.y = pose_orientation[1]
-        lower_lower_tf.transform.rotation.z = pose_orientation[2]
-        lower_lower_tf.transform.rotation.w = pose_orientation[3]
-        static_broadcaster.sendTransform(lower_lower_tf)
-
-        upper_elbow_tf = TransformStamped()
-        upper_elbow_tf.header.stamp = rospy.Time.now()
-        upper_elbow_tf.header.frame_id = "myo_lower"
-        upper_elbow_tf.child_frame_id = "wrist"
-        upper_elbow_tf.transform.translation.x = 2
-        upper_elbow_tf.transform.translation.y = 0
-        upper_elbow_tf.transform.translation.z = 0
+        lower_wrist_tf = TransformStamped()
+        lower_wrist_tf.header.stamp = rospy.Time.now()
+        lower_wrist_tf.header.frame_id = "myo_lower"
+        lower_wrist_tf.child_frame_id = "wrist"
+        lower_wrist_tf.transform.translation.x = 2
+        lower_wrist_tf.transform.translation.y = 0
+        lower_wrist_tf.transform.translation.z = 0
         q_wrist = quaternion_from_euler(0, 3.14/2, 0)
-        upper_elbow_tf.transform.rotation.x = q_wrist[0]
-        upper_elbow_tf.transform.rotation.y = q_wrist[1]
-        upper_elbow_tf.transform.rotation.z = q_wrist[2]
-        upper_elbow_tf.transform.rotation.w = q_wrist[3]
-        static_broadcaster.sendTransform(upper_elbow_tf)
+        lower_wrist_tf.transform.rotation.x = q_wrist[0]
+        lower_wrist_tf.transform.rotation.y = q_wrist[1]
+        lower_wrist_tf.transform.rotation.z = q_wrist[2]
+        lower_wrist_tf.transform.rotation.w = q_wrist[3]
+        static_broadcaster.sendTransform(lower_wrist_tf)
 
-        # upper_elbow_tf = TransformStamped()
-        # upper_elbow_tf.header.stamp = rospy.Time.now()
-        # upper_elbow_tf.header.frame_id = "wrist"
-        # upper_elbow_tf.child_frame_id = "wrist_orientated"
-        # wrist_reversed = quaternion_from_euler(0, -3.14/2, 0)
-        # pose_reversed = list(pose_orientation).copy()
-        # pose_reversed[3] *= -1
-        # q = quaternion_multiply(wrist_reversed, pose_reversed)
-        # upper_elbow_tf.transform.rotation.x = q[0]
-        # upper_elbow_tf.transform.rotation.y = q[1]
-        # upper_elbow_tf.transform.rotation.z = q[2]
-        # upper_elbow_tf.transform.rotation.w = q[3]
-        # static_broadcaster.sendTransform(upper_elbow_tf)
-        
         marker = Marker()
         marker.header.stamp = rospy.Time.now()
         marker.header.frame_id = "wrist"
@@ -177,6 +184,14 @@ class Handler:
         self.marker_pub.publish(marker)
 
     def align(self, req):
+        """ Helper function for align service 
+        First, hold arm straight, this is the relaxed angle. Then hold arm at where the markers
+        in rviz are straight, this is the positioned angle. Aligning the markers means adding the difference 
+        between relaxed and positioned roll angles on current threshold (the default is 0).
+
+            Args:
+                req (SetBool) - whether to record relaxed or positioned angle 
+        """
         print("Trying to align axis")
         print("Compare lower vs upper: ", self.lower_rpy, ' --- ', self.upper_rpy)
         if req.data:

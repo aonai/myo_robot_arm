@@ -1,50 +1,63 @@
 <launch>
-  <arg name="use_fake" default="false"/>
-  <arg name="use_actual" default="false"/>
+    <arg name="use_fake" default="false" doc="whether to fake robot"/>
+    <arg name="use_actual" default="false" doc="whether to actual robot"/>
+    <arg name="plot_waist_cmd" default="false" doc="plot controlling, command, and actual angles of waist joint"/>
+    <arg name="plot_shoulder_cmd" default="false" doc="plot controlling, command, and actual angles of shoulder joint"/>
+    <arg name="plot_elbow_cmd" default="false" doc="plot controlling, command, and actual angles of elbow joint"/>
+    <arg name="plot_wrist_and_gripper_cmd" default="false" 
+        doc="plot gesture predictions, command, and actual angles of wrist joint and gripper"/>
 
-  <rosparam param="cmd_freq">50</rosparam>
-  <rosparam param="listen_tf_period">0.5</rosparam>
+    <!-- configs for control frequency of px100 -->
+    <rosparam param="cmd_freq">50.0</rosparam>
+    <rosparam param="listen_tf_period">0.5</rosparam>
 
-  <include file="$(find arm_control)/launch/moveit/xsarm_moveit.launch">
-    <arg name="use_fake" value="true"  if="$(arg use_fake)"/>
-    <arg name="use_actual" value="true"  if="$(arg use_actual)"/>
-    <arg name="robot_model" value="px100"/>
-    <arg name="dof" value="4"/>
-  </include>
+    <include file="$(find arm_control)/launch/moveit/xsarm_moveit.launch">
+        <arg name="use_fake" value="true"  if="$(arg use_fake)"/>
+        <arg name="use_actual" value="true"  if="$(arg use_actual)"/>
+        <arg name="robot_model" value="px100"/>
+        <arg name="dof" value="4"/>
+    </include>
 
+    <node name="listen_myo" pkg="arm_control" type="listen_myo" />
+    <node name="listen_tf" pkg="arm_control" type="listen_tf" />
+    <node name="process_emg" pkg="arm_control" type="process_emg" />
+    <node name="control_robot" pkg="arm_control" type="control_robot"/>
 
-  <node name="listen_myo" pkg="arm_control" type="listen_myo" />
-  <node name="listen_tf" pkg="arm_control" type="listen_tf" />
-  <node name="process_emg" pkg="arm_control" type="process_emg" />
-  <node name="control_robot" pkg="arm_control" type="control_robot" output="screen"/>
+    <group if="$(arg plot_waist_cmd)">
+        <node name="waist_command"
+            pkg="rqt_plot"
+            type="rqt_plot"
+            args="/myo_upper/pose/pose/orientation/x
+                /px100/arm_controller/state/desired/positions[0]
+                /px100/arm_controller/state/actual/positions[0]"/>
+    </group>
 
-  <node name="waist_command"
-      pkg="rqt_plot"
-      type="rqt_plot"
-      args="/myo_upper/pose/pose/orientation/x
-          /px100/arm_controller/state/desired/positions[0]
-          /px100/arm_controller/state/actual/positions[0]"/>
+    <group if="$(arg plot_shoulder_cmd)">
+        <node name="shoulder_command"
+                pkg="rqt_plot"
+                type="rqt_plot"
+                args="/myo_upper/pose/pose/orientation/y
+                    /px100/arm_controller/state/desired/positions[1]
+                    /px100/arm_controller/state/actual/positions[1]"/>
+    </group>
 
-  <!-- <node name="shoulder_command"
-      pkg="rqt_plot"
-      type="rqt_plot"
-      args="/myo_upper/pose/pose/orientation/y
-          /px100/arm_controller/state/desired/positions[1]
-          /px100/arm_controller/state/actual/positions[1]"/> -->
+    <group if="$(arg plot_elbow_cmd)">
+        <node name="elbow_command"
+                pkg="rqt_plot"
+                type="rqt_plot"
+                args="/myo_lower/pose/pose/orientation/x
+                    /myo_upper/pose/pose/orientation/x
+                    /px100/arm_controller/state/desired/positions[2]
+                    /px100/arm_controller/state/actual/positions[2]"/>   
+    </group>
 
-  <!-- <node name="elbow_command"
-      pkg="rqt_plot"
-      type="rqt_plot"
-      args="/myo_lower/pose/pose/orientation/x
-          /myo_upper/pose/pose/orientation/x
-          /px100/arm_controller/state/desired/positions[2]
-          /px100/arm_controller/state/actual/positions[2]"/>    -->
-  
-  <!-- <node name="wrist_and_gripper_command"
-      pkg="rqt_plot"
-      type="rqt_plot"
-      args="/myo_lower/myo_pred
-          /px100/arm_controller/state/desired/positions[3]
-          /px100/arm_controller/state/actual/positions[3]"/>    -->
+    <group if="$(arg plot_wrist_and_gripper_cmd)">
+            <node name="wrist_and_gripper_command"
+        pkg="rqt_plot"
+        type="rqt_plot"
+        args="/myo_lower/myo_pred
+            /px100/arm_controller/state/desired/positions[3]
+            /px100/arm_controller/state/actual/positions[3]"/>   
+    </group>
 
 </launch>

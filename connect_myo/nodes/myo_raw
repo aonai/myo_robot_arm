@@ -1,18 +1,52 @@
 #!/usr/bin/env python3
-from connect_myo.myodriver import MyoDriver
-from connect_myo.config import Config
-import serial
-import struct
-from math import sqrt, degrees
-from tf.transformations import quaternion_from_euler, quaternion_multiply, euler_from_quaternion
+''' 
+This is a ROS adaption of https://github.com/francocruces/MioConnect 
+
+Connects to two myo armbands. While reading the bluetooth messages from myos, this node 
+is going to publish IMU, orientation, pose, EMG, and gestures information.
+
+PUBLISHERS: 
+  + myo_lower/myo_imu
+    myo_upper/myo_imu (Imu) ~ normalized IMU from myos
+  + myo_lower/myo_ori
+    myo_upper/myo_ori (Vector3) ~ normalized orientation of myo in radian euler format
+  + myo_lower/myo_ori_deg
+    myo_upper/myo_ori_deg (Vector3) ~ normalized orientation of myo in degree euler format
+  + myo_lower/pose
+    myo_upper/pose (PoseStamped) ~ normalized pose of myo; i.e. normalized orientation of myo 
+                                    in radian quaternion format
+  + myo_lower/myo_emg
+    myo_upper/myo_emg (Float32MultiArray) ~ raw EMG of myo
+  + myo_lower/myo_gest
+    myo_upper/myo_gest (Int16) ~ gesture index predicted by the defualt myo classifier
+
+PARAMETERS:
+  + myo_name (list of string) ~ determines which myo corresponds to which arm
+                            ['myo_lower', 'myo_upper'] means the first myo connected is placed on 
+                            lower arm and the second myo connected is placed on upper arm
+  + num_myo (integer) ~ numer of myo to connect 
+
+''' 
+
 import rospy
 from geometry_msgs.msg import Quaternion, Vector3, PoseStamped, Point, Pose
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Header, Float32MultiArray, Int16
+import serial
+from math import sqrt, degrees
+from tf.transformations import euler_from_quaternion
+from connect_myo.myodriver import MyoDriver
+from connect_myo.config import Config
+
 
 class Handler:
     def __init__(self):
-        # Run
+        """ Helper class for node myo_raw.
+        Use library connect_myo to connects to two myo armbands (one on lower arm and one
+        on upper arm). Then, listens to the bluetooth messages and publishes IMU, EMG, and 
+        orientation information. 
+        """
+        # myo params
         self.config = Config()
         self.num_myo = rospy.get_param('num_myo')
         self.config.MYO_AMOUNT = self.num_myo
@@ -20,11 +54,11 @@ class Handler:
         self.emg_val = None
         self.imu_val = None
         self.gest_val = None
-        self.rate = rospy.Rate(20000) 
         self.last_emg = None
         self.last_imu = None
 
         # ROS Params
+        self.rate = rospy.Rate(20000) 
         self.myo_name = rospy.get_param('myo_name')
         self.imuPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_imu', Imu, queue_size=1),
                         rospy.Publisher(f'{self.myo_name[1]}/myo_imu', Imu, queue_size=1)]
@@ -40,8 +74,6 @@ class Handler:
                        rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
         
         rospy.Timer(rospy.Duration(0.5), self.check_myo)  
-        # rospy.Timer(rospy.Duration(1/200), self.handle_emg) 
-        # rospy.Timer(rospy.Duration(1/50), self.handle_imu) 
         rospy.Timer(rospy.Duration(1/50), self.handle_gest)
 
         try:
@@ -85,6 +117,9 @@ class Handler:
             print("Disconnected")
 
     def pub_emg(self):
+        """ Publish raw EMG from both myo.
+        EMG is only published when the info changes.
+        """
         if self.last_emg is None \
             or not self.last_emg == self.emg_val:
             self.last_emg = self.emg_val.copy()
@@ -96,7 +131,9 @@ class Handler:
             self.emgPub[1].publish(msg)
         
     def pub_imu(self):
-        """ Adapted from https://github.com/uts-magic-lab/ros_myo """
+        """ Publish IMU and orientation of both myo. 
+        Adapted from https://github.com/uts-magic-lab/ros_myo 
+        """
         if self.last_imu is None \
             or not self.last_imu == self.imu_val:
             self.last_imu = self.imu_val.copy()
@@ -141,9 +178,11 @@ class Handler:
                 self.oriDegPub[i].publish(Vector3(degrees(roll), degrees(pitch), degrees(yaw)))
                 self.posePub[i].publish(PoseStamped(h,Pose(Point(0.0,0.0,0.0),normQuat)) )
 
-        
-
     def check_myo(self, event):
+        """ Check whether rosparam /myo_name has changed.
+        If yes, then updates the current publisher lists to have myo messages be published under
+        the correct names.
+        """
         if not self.myo_name == rospy.get_param('myo_name'):
             print("Switch upper and lower arm")
             self.myo_name = rospy.get_param('myo_name')
@@ -159,11 +198,24 @@ class Handler:
                         rospy.Publisher(f'{self.myo_name[1]}/myo_emg', Float32MultiArray, queue_size=1)]
             self.gestPub = [rospy.Publisher(f'{self.myo_name[0]}/myo_gest', Int16, queue_size=1),
                         rospy.Publisher(f'{self.myo_name[1]}/myo_gest', Int16, queue_size=1)]
- 
 
     def handle_gest(self, event):
+        """ Publish gesture index predicted by the default myo classifier. 
+        Corresponding gestures are as follws:
+            REST = 0
+            FIST = 1
+            WAVE_IN = 2
+            WAVE_OUT = 3
+            FINGERS_SPREAD = 4
+            THUMB_TO_PINKY = 5
+            UNKNOWN = 255
+        
+        It seems like due to the configs of myo, only one myo is going to send out gesture prediction. 
+        If myo is not classifying on the correct arm, switch it to the lower arm. 
+        """
         if self.gest_val is not None:
-            print("gest = ", self.gest_val)
+            names = ['REST', 'FIST', 'WAVE_IN', 'WAVE_OUT', 'FINGERS_SPREAD', 'THUMB_TO_PINKY', 'UNKNOWN']
+            print("gest = ", self.gest_val, ' ', )
             msg = Int16()
             msg.data = self.gest_val[1][1]  # myo bluetooth config for classifier is type, val, xdir, _, _, _
             myo_idx = self.gest_val[0]

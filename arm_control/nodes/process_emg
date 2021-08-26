@@ -1,14 +1,39 @@
 #!/usr/bin/env python3
+"""
+Listens to lower and upper arm myo's EMG signals and predicts muscle motions. 
+This node is going to keep track of lower myo's EMG signals and use both the 
+default and long-term classifiers to predict right hand gestures. It primarily uses
+the long-term myo model that is trained from one subject and five gestures. Given
+the limitation of data size, the default classifier is used as a confirmation of 
+determining whether the prediction is correct. The node also subscribes to upper arm 
+EMG signals to determine whether biceps are activated. 
+
+PUBLISHERS:
+  + myo_lower/processed_emg (Float32MultiArray) ~ normalized EMG signals 
+  + myo_lower/myo_pred (Int16) ~ hand gesture index 
+  + myo_upper/rest_bicep (Bool) ~ whether biceps are at rest 
+
+SUBSRIBERS:
+  + myo_lower/myo_emg (Float32MultiArray) ~ raw EMG of myo
+  + myo_upper/myo_gest (Int16) ~ gesture index predicted by the defualt myo classifier
+
+SERVICES:
+  + record_upper (Empty) ~ record upper myo EMG signals for around 3 seconds, and set 
+                            at-rest-threshold to their mean plus std. After this threshold
+                            is set, if upper EMG exceeds the threshold, then biceps are activated.
+
+"""
 import rospy
-from std_msgs.msg import Float32MultiArray, Int16, Bool
 import enum
 import numpy as np
+from std_srvs.srv import Empty
+from std_msgs.msg import Float32MultiArray, Int16, Bool
 from arm_control.utils import butter_highpass_filter, getTSD
 from arm_control.classifier import predict
-from std_srvs.srv import Empty
 
 
 class Pose(enum.Enum):
+    """ Gesture prediction index of myo's default classifier """
     REST = 0
     FIST = 1
     WAVE_IN = 2
@@ -17,67 +42,82 @@ class Pose(enum.Enum):
     THUMB_TO_PINKY = 5
     UNKNOWN = 255
 
+class MyoPred(enum.Enum):
+    """ Gesture prediction index of long-term myo classifier """
+    REST = 0
+    WF = 1      # wrist extension
+    WE = 2      # wrist flexion
+    RD = 3      # radial deviation
+    UD = 4      # ulnar deviation 
+
 class Handler:
     def __init__(self):
-        self.last_time = None
-        self.current_time = None
+        """ Helper class for node process_emg.
+        Listens to lower and upper myo info and predicts hand gestures and upper muscle motions. 
+        """
+        # lower emg params
+        self.raw_emg = None
         self.emg_examples = None
         self.formated_example = None
         self.featured_example = None
-        self.predicted = 0
-        self.raw_emg = None
+        self.predicted = Pose.REST
+        self.gest = MyoPred.REST
+        self.longterm_myo_names = ['REST', 'WF', 'WE', 'RD', 'UD']
+    
+        # upper emg params
         self.upper_emg_at_rest = None
         self.start_record = False
         self.rest_thresh = 1.78
-        self.gest = None
         self.rest_bicep_tmp = []
 
-        self.longterm_myo_names = ['REST', 'WF', 'WE', 'RD', 'UD', 'FP', 'FS', 'HC', 'FP & WF', 'FP & WE',
-                                    'FP & RD', 'FP & UD', 'FS & WF', 'FS & WE', 'FS & RD', 'FS & UD', 'HC & WF',
-                                    'HC & WE', 'HC & RD', 'HC & UD', 'HC & FP', 'HC & FS']
-        # self.longterm_myo_names = ['REST', 'FP & WF', 'FP & WE', 'FP & RD', 'FP & UD']
+        # ROS params 
         self.emg_sub = rospy.Subscriber('myo_lower/myo_emg', Float32MultiArray, self.emg_callback)
         self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
         self.processed_emg_pub = rospy.Publisher('myo_lower/processed_emg', Float32MultiArray, queue_size = 10)
         self.pred_pub = rospy.Publisher('myo_lower/myo_pred', Int16, queue_size=1)
         self.bicep_pub = rospy.Publisher('myo_upper/rest_bicep', Bool, queue_size=1)
-        rospy.Timer(rospy.Duration(1/10), self.pub_arm_stats) 
-
         self.record_upper_service = rospy.Service("record_upper", Empty, self.record_upper_callback)
         
+        rospy.Timer(rospy.Duration(1/10), self.pub_arm_stats) 
         
     def emg_callback(self, data):
+        """ Callback function for lower myo EMG signals. 
+        Update raw EMG, normalize the signals, then predict right hand gesture. 
+        If record_upper service is called, store the raw EMG into a list and calculate
+        the at-rest-threshold when the recording is done. 
+
+            Args:
+                data (Float32MultiArray) ~ raw EMG of myo
+        """
         self.raw_emg = data.data
+        msg = Float32MultiArray()
+        msg.data  = self.proc_emg(self.raw_emg)
+        self.processed_emg_pub.publish(msg)
 
-        if self.last_time is None:
-            self.last_time = rospy.get_time()
-            self.current_time = self.last_time
-        else:
-            self.last_time = self.current_time
-            self.current_time = rospy.get_time()
+        if self.start_record and self.predicted == 0:
+            print("Recording. Keep arm at rest ")
+            if self.upper_emg_at_rest is None:
+                self.upper_emg_at_rest = self.raw_emg
+            else:
+                self.upper_emg_at_rest = np.row_stack((self.upper_emg_at_rest, self.raw_emg))
 
-            msg = Float32MultiArray()
-            msg.data  = self.proc_emg(self.raw_emg)
-            self.processed_emg_pub.publish(msg)
-
-            if self.start_record and self.predicted == 0:
-                print("Recording. Keep arm at rest ")
-                if self.upper_emg_at_rest is None:
-                    self.upper_emg_at_rest = self.raw_emg
-                else:
-                    self.upper_emg_at_rest = np.row_stack((self.upper_emg_at_rest, self.raw_emg))
-
-                    if len(self.upper_emg_at_rest) >= 500: # 2.5s window at 200Hz
-                        self.start_record = False
-                        m = np.mean(self.upper_emg_at_rest)
-                        std = np.std(self.upper_emg_at_rest)
-                        self.rest_thresh = np.abs(m + std)
-                        print("Record Complete. ", np.shape(self.upper_emg_at_rest), " mean = ", m, " std = ", std)
-                        print("Thresh = ", self.rest_thresh)
-
-
+                if len(self.upper_emg_at_rest) >= 500: # 2.5s window at 200Hz
+                    self.start_record = False
+                    m = np.mean(self.upper_emg_at_rest)
+                    std = np.std(self.upper_emg_at_rest)
+                    self.rest_thresh = 2*np.abs(m + std)
+                    print("Record Complete. ", np.shape(self.upper_emg_at_rest), " mean = ", m, " std = ", std)
+                    print("Thresh = ", self.rest_thresh)
     
     def proc_emg(self, raw_emg):
+        """ Helper function for normalizing EMG 
+
+            Args:
+                raw_emg (list of double) - list of 8 raw EMG signals (8 bit)
+            
+            Returns:
+                normalized_emg (list of double) - list of 8 normalized EMG signals 
+        """
         normalized_emg = []
         for emg in raw_emg:
             if emg < 0:
@@ -88,8 +128,17 @@ class Handler:
         self.format_examples(normalized_emg)
         return normalized_emg
     
-
     def format_examples(self, new_example, window_size=50, size_non_overlap=10):
+        """ Helper function for filtering EMG, applying feature function, and predicting
+        right hand gesture. 
+        See https://github.com/aonai/long_term_myo_notes/blob/main/test_code/train_for_ros_myo.ipynb
+        for details. 
+
+            Args:
+                new_example (list of double) - list of 8 normalized EMG signals
+                window_size (int) - analysis window size 
+                size_non_overlap (int) - analysis window non-overlap size 
+        """
         if self.emg_examples is None:
             self.emg_examples = new_example
         else:
@@ -98,8 +147,6 @@ class Handler:
         # store one window_size of signal
         if len(self.emg_examples) >= window_size:
             if not np.sum(self.emg_examples) == 0:   # avoid all zero signals
-                # featured_example = getTSD(example.transpose())
-                # self.emg_examples.append(np.array(featured_example).transpose().flatten())
                 self.formated_example = butter_highpass_filter(self.emg_examples)
                 self.featured_example = getTSD(self.formated_example.transpose())
                 self.predicted = predict(self.featured_example)
@@ -108,12 +155,15 @@ class Handler:
             # Remove part of the data of the example according to the size_non_overlap variable
             self.emg_examples = self.emg_examples[size_non_overlap:]
         
-        # print(self.predicted, " --- exmaple = ", np.shape(self.emg_examples), " --- ", np.shape(self.formated_example), " --- ", np.shape(self.featured_example))
         self.formated_example = None
         self.featured_example = None
 
     def gest_callback(self, data):
-        # print("myo_lower gest = ", Pose(data.data))
+        """ Callback function for gesture prediction from the default myo classifier 
+
+            Args:
+                data (Int16) - gesture index predicted by the defualt myo classifier
+        """
         self.gest = Pose(data.data)
         if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
             self.pub_group_cmd = True
@@ -121,18 +171,31 @@ class Handler:
             self.pub_group_cmd = False
     
     def pub_arm_stats(self, event):
+        """ Helper function to publish right-hand gesture and biceps motion.
+        RD and UD are often confused with WF and WE. To improve accuracy of 
+        predictions, the default myo classifier is used. If the long-term
+        prediction is RD or UD and if the default prediction is WAVE_IN or 
+        WAVE_OUT, then it's likely that the actual hand gesture is WF or WE. 
+        If absolute value of mean+std. is larger the at-rest-threshold, 
+        then biceps are activated. To avoid glitches at high frequency, the 
+        activated message is only sent out when biceps are determined to be on 
+        for 0.2 seconds.  
+        """
+        # lower right hand gesture 
         msg = Int16()
-        msg.data = self.predicted
-        if (self.predicted == 3 or self.predicted == 4):
+        # msg.data = MyoPred(self.predicted)
+        self.predicted = MyoPred(msg.data)
+        # if (self.predicted == 3 or self.predicted == 4):
+        if (self.predicted == MyoPred.RD or self.predicted == MyoPred.UD):
             if self.gest and self.gest == Pose.WAVE_IN:
-                msg.data =  1  
+                msg.data =  MyoPred.WF  
             elif self.gest and self.gest == Pose.WAVE_OUT: 
-                msg.data = 2
-        # if self.start_record:
+                msg.data = MyoPred.WE
         print("predicted: ", self.predicted, " ", self.longterm_myo_names[self.predicted], " --- pub msg: ", \
-                msg.data, " ", self.longterm_myo_names[msg.data])
+                msg.data, " ",  self.longterm_myo_names[msg.data])
         self.pred_pub.publish(msg)
 
+        # biceps 
         msg = Bool()
         if self.rest_thresh is None or not self.raw_emg: # assume bicep is always at rest when no thresh is recorded 
             msg.data = True
@@ -140,7 +203,7 @@ class Handler:
             m = np.mean(self.raw_emg)
             std = np.std(self.raw_emg)
             # print("bicep ", m+std, " vs ", self.rest_thresh, " = ", np.abs(m+std) > self.rest_thresh)
-            rest_bicep = False if np.abs(m+std) > 2*self.rest_thresh else True
+            rest_bicep = False if np.abs(m+std) > self.rest_thresh else True
             msg.data = True
             self.rest_bicep_tmp.append(rest_bicep)
             if not rest_bicep == self.rest_bicep_tmp[-1]: 
@@ -148,18 +211,14 @@ class Handler:
             else:
                 if len(self.rest_bicep_tmp) >= 10 and not rest_bicep:
                     msg.data = False
-
         self.bicep_pub.publish(msg)
 
     def record_upper_callback(self, res):
+        """ Helper function for record_upper service """
         print("recording upper EMG, keep arm at rest")
         self.start_record = True
         return []
     
-
-
-
-
 
 def main():
     """ The main() function. """

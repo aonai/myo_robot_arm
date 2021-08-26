@@ -23,6 +23,7 @@ class MyoDriver:
         self.myo_to_connect = None
         self.scanning = False
 
+        # store info for ROS
         self.emg_val = None
         self.imu_val = None
         self.gest_val = None
@@ -333,10 +334,21 @@ class MyoDriver:
 ##############################################################################
     
     def get_emg(self):
+        """
+        :return: two raw EMG lists in list. The first EMG list corresponds to 
+                    myo (id=0) and the second list corresponds to myo (id=0)
+        """
         return self.emg_val
     
     def get_imu(self):
+        """
+        :return: two raw IMU lists in list. The first IMU list corresponds to 
+                    myo (id=0) and the second list corresponds to myo (id=0)
+        """       
         return self.imu_val
     
     def get_gest(self):
+        """
+        :return: predicted gesture integer and id of myo sending out the prediction
+        """       
         return self.gest_val

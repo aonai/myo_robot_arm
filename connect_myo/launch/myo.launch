@@ -1,26 +1,49 @@
-<?xml version="1.0"?>
 <launch>
 
-  <!-- user args -->
-  <arg name="port" default="/dev/ttyACM0" doc="Port used by the Myo dongle. Check it with 'ls /dev/' and look for ttyACM0 for instance. You need to provide the full path." />
-  <arg name="rviz" default="true" doc="rviz visualization or not"/>
-  <arg name="node_name" default="myo_raw"/>
+    <!-- <arg name="port" default="/dev/ttyACM0" doc="Port used by the Myo dongle. Check it with 'ls /dev/' and look for ttyACM0 for instance. You need to provide the full path." /> -->
+    <arg name="rviz" default="true" doc="whether to use rviz visualization or not"/>
+    <arg name="plot_raw_emg" default="false" doc="plot lower and upper raw EMG signals"/>
 
-  <rosparam param="myo_name">['myo_upper', 'myo_lower']</rosparam>
-  <!-- <rosparam param="myo_name">['myo_lower', 'myo_upper']</rosparam> -->
-  <rosparam param="num_myo">2</rosparam>
+    <!-- configs for connecting myo and setting rviz -->
+    <rosparam param="myo_name">['myo_upper', 'myo_lower']</rosparam>
+    <rosparam param="num_myo">2</rosparam>
 
-  <!-- myo ros node -->
-  <node pkg="connect_myo" name="$(arg node_name)" type="myo_raw" args="$(arg port)" output="screen"/>
+    <!-- <node pkg="connect_myo" name="myo_raw" type="myo_raw" args="$(arg port)" output="screen"/> -->
+    <node pkg="connect_myo" name="world" type="myo_raw" output="screen"/>
 
-  <!--visualization-->
-  <group if="$(arg rviz)">
-      <node
-          name="rviz_myo"
-          pkg="rviz"
-          type="rviz"
-          args="-d $(find connect_myo)/config/rviz_display.rviz"> 
-      </node>
-  </group>
+    <group if="$(arg rviz)">
+        <node
+            name="rviz_myo"
+            pkg="rviz"
+            type="rviz"
+            args="-d $(find connect_myo)/config/rviz_display.rviz"> 
+        </node>
+    </group>
+    
+    <group if="$(arg plot_raw_emg)">
+        <node name="lower_raw_emg"
+            pkg="rqt_plot"
+            type="rqt_plot"
+            args="/myo_lower/myo_emg/data[0] 
+                /myo_lower/myo_emg/data[1]
+                /myo_lower/myo_emg/data[2]
+                /myo_lower/myo_emg/data[3]
+                /myo_lower/myo_emg/data[4]
+                /myo_lower/myo_emg/data[5]
+                /myo_lower/myo_emg/data[6]
+                /myo_lower/myo_emg/data[7]"/>
+
+        <node name="upper_raw_emg"
+            pkg="rqt_plot"
+            type="rqt_plot"
+            args="/myo_upper/myo_emg/data[0] 
+                /myo_upper/myo_emg/data[1]
+                /myo_upper/myo_emg/data[2]
+                /myo_upper/myo_emg/data[3]
+                /myo_upper/myo_emg/data[4]
+                /myo_upper/myo_emg/data[5]
+                /myo_upper/myo_emg/data[6]
+                /myo_upper/myo_emg/data[7]"/>
+    </group>
 
 </launch>

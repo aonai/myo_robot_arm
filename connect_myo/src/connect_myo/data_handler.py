@@ -7,7 +7,6 @@ class DataHandler:
     EMG/IMU/Classifier data handler.
     """
     def __init__(self, config):
-        # self.osc = udp_client.SimpleUDPClient(config.OSC_ADDRESS, config.OSC_PORT)
         self.printEmg = config.PRINT_EMG
         self.printImu = config.PRINT_IMU
         self.printGest = config.PRINT_GEST
@@ -16,17 +15,22 @@ class DataHandler:
         self.two_imu = [None, None]
     
     def handle_gest(self, payload):
+        """ 
+        Handle gesture data 
+        :param payload['connection']: unique id of myo being handled
+        :val: predicted gesture integer
+        """
         val = struct.unpack('6B',  payload['value'])
         if self.printGest:
             print("gest", payload['connection'], payload['atthandle'], val)
 
         return payload['connection'], val
 
-
     def handle_emg(self, payload):
         """
         Handle EMG data.
-        :param payload: emg data as two samples in a single pack.
+        :two_emg: two raw EMG lists in list. The first EMG list corresponds to 
+                    myo (id=0) and the second list corresponds to myo (id=0)
         """
         val = struct.unpack('<8b',  payload['value'][:8])
         val2 = struct.unpack('<8b',  payload['value'][8:]) 
@@ -41,7 +45,8 @@ class DataHandler:
     def handle_imu(self, payload):
         """
         Handle IMU data.
-        :param payload: imu data in a single byte array.
+        :two_emg: two raw IMU lists in list. The first IMU list corresponds to 
+                    myo (id=0) and the second list corresponds to myo (id=0)
         """
         vals = struct.unpack('10h', payload['value'])
         quat = vals[:4]

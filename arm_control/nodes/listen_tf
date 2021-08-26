@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+Listens to tf transformation published by `listen_myo` and publishes controlling angles for `control_robot`.
+The robot's waist joint is controlled by upper arm's yaw angle. The robot's shoulder joint is controlled by 
+upper arm's pitch angles. The robot's elbow joint is controlled by the difference between lower and upper 
+arm's pitch angles. 
+
+PUBLISHERS:
+  + tf_rpy (Float32MultiArray) ~ a list of controlling angles for waist, shoulder, and elbow commands generated at 50Hz
+
+"""
+
 import rospy
 import tf
 from tf.transformations import euler_from_quaternion
@@ -7,6 +18,9 @@ from std_msgs.msg import Float32MultiArray
 
 class Handler:
     def __init__(self):
+        """ Helper class for node listen_tf 
+        Listens to tf transforms and generates controlling angles for waist, shoulder, and elbow. 
+        """
         self.listener = tf.TransformListener()
 
         self.last_waist_rpy = None
@@ -19,8 +33,13 @@ class Handler:
         self.tf_rpy_pub = rospy.Publisher('tf_rpy', Float32MultiArray, queue_size=1)
         rospy.Timer(rospy.Duration(1/50), self.listen_tf) 
 
-
     def listen_tf(self, event): 
+        """ Helper function for listening to tf transforms 
+        Also publishes controlling angles for the robot's waist, shoulder, and elbow joints.
+        These controlling angles are calculated from the relative angles between previous and 
+        current data. If no tf is published, controlling angles will be all 0, meaning that 
+        the robot should not move. 
+        """
         try:
             (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
             self.last_waist_rpy = self.current_waist_rpy

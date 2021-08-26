@@ -164,7 +164,6 @@ def getTSDfeatures_for_one_representation(vector):
 
     return Feat
 
-# use raw
 def butter_highpass(highcut=15.0, fs=200.0, order=5):
     """ 
     High-pass butterworth filter at 15Hz

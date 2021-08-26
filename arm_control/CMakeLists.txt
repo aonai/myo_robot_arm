@@ -9,6 +9,8 @@ project(arm_control)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS 
     geometry_msgs
+    interbotix_xs_sdk
+    moveit_msgs
     rospy
     sensor_msgs
     std_msgs
@@ -110,6 +112,8 @@ catkin_package(
 #  CATKIN_DEPENDS other_catkin_pkg
 #  DEPENDS system_lib
     CATKIN_DEPENDS geometry_msgs
+    CATKIN_DEPENDS interbotix_xs_sdk
+    CATKIN_DEPENDS moveit_msgs
     CATKIN_DEPENDS rospy
     CATKIN_DEPENDS sensor_msgs
     CATKIN_DEPENDS std_msgs
@@ -167,7 +171,6 @@ ${catkin_INCLUDE_DIRS}
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  nodes/controller
   nodes/listen_myo
   nodes/listen_tf
   nodes/control_robot
