@@ -23,7 +23,8 @@ PUBLISHERS:
 PARAMETERS:
   + myo_name (list of string) ~ determines which myo corresponds to which arm
                             ['myo_lower', 'myo_upper'] means the first myo connected is placed on 
-                            lower arm and the second myo connected is placed on upper arm
+                            lower arm and the second myo connected is placed on upper arm. Order
+                            of which myo serial detects first is random. 
   + num_myo (integer) ~ numer of myo to connect 
 
 ''' 

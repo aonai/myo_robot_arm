@@ -12,7 +12,7 @@ PUBLISHERS:
   + px100/commands/joint_group (JointGroupCommand) ~ a group of joint angle commands to be sent to the robot;
                                                     this is used for publishing waist, shoulder, and elbow commands.
   + px100/commands/joint_single (JointSingleCommand) ~ single joint angle command to be sent to the robot;
-                                                        this is used for publishing wrist command.          
+                                                        this is used for publishing wrist commands.          
 SUBSRIBERS:
   + px100/joint_states (JointState) ~ joint state of the robot; include robot joint positions and names 
   + myo_lower/myo_pred (Int16) ~ gesture index predicted by `process_emg`

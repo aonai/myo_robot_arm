@@ -184,7 +184,6 @@ class Handler:
         # lower right hand gesture 
         msg = Int16()
         msg.data = self.predicted.value
-        # if (self.predicted == 3 or self.predicted == 4):
         if (self.predicted == MyoPred.RD or self.predicted == MyoPred.UD):
             if self.gest and self.gest == Pose.WAVE_IN:
                 msg.data =  MyoPred.WF.value
@@ -201,7 +200,6 @@ class Handler:
         else:
             m = np.mean(self.raw_emg)
             std = np.std(self.raw_emg)
-            # print("bicep ", m+std, " vs ", self.rest_thresh, " = ", np.abs(m+std) > self.rest_thresh)
             rest_bicep = False if np.abs(m+std) > self.rest_thresh else True
             msg.data = True
             self.rest_bicep_tmp.append(rest_bicep)

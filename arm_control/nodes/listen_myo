@@ -44,7 +44,6 @@ class Handler:
 
     def pose_upper_callback(self, data):
         """ Callback function for upper arm tf and markers
-        If the muscles are activated, lower the control gains. 
 
             Args:
                 data (PoseStamped) - normalized pose of myo; i.e. normalized orientation of myo 
@@ -120,7 +119,6 @@ class Handler:
 
     def pose_lower_callback(self, data):
         """ Callback function for lower arm tf and markers
-        If the muscles are activated, lower the control gains. 
 
             Args:
                 data (PoseStamped) - normalized pose of myo; i.e. normalized orientation of myo 
