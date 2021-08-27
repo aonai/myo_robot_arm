@@ -14,7 +14,7 @@ The goal of this project is to control a PincherX 100 Robot Arm using two Myo ar
 * [interbotix_ros_toolboxes](https://github.com/Interbotix/interbotix_ros_toolboxes)
 * [interbotix_ros_core](https://github.com/Interbotix/interbotix_ros_core)
 * [PincherX 100 robot arm](https://www.trossenrobotics.com/pincherx-100-robot-arm.aspx)
-* Two Myo armbands connected through two dongles 
+* Two [Myo armbands](https://www.amazon.com/Thalmic-Labs-Gesture-Control-Presentations/dp/B00VHWBH02) connected through two dongles 
 
 ## Packacges 
 1. `connect_myo` connects to two myo armbands; publishes IMU, EMG, orientation, and predicted gesture; displays EMG and pose in rviz; and plots raw EMG signals in rqt_plot.
@@ -30,7 +30,7 @@ The goal of this project is to control a PincherX 100 Robot Arm using two Myo ar
 
 ## Instructions
 1. `connect_myo`
-    * First, connects to two myo armbands. Then, publishes raw EMG, normalized IMU, orientation axis in euler and quaternion, and gesture predicted by the default myo classifier. Also, displays normalized IMU and orientation in rviz and plots raw EMG signals in rqt_plot. The purple IMU and yellow Pose belongs to lower myo. The orange IMU and green Pose belongs to upper myo. 
+    * First, connects to two myo armbands. Then, publishes raw EMG, normalized IMU, orientation axis in euler and quaternion, and gesture predicted by the default myo classifier. Also, displays normalized IMU and orientation in rviz and plots raw EMG signals in rqt_plot. The purple IMU and yellow Pose belong to lower myo. The orange IMU and green Pose belong to upper myo. 
         ```
         roslaunch connect_myo myo.launch plot_raw_emg:=true
         ```
@@ -40,7 +40,7 @@ The goal of this project is to control a PincherX 100 Robot Arm using two Myo ar
         ```
 
 2. `arm_control`
-    * The robot first starts at HOME position. Moving the arm controls the robot's waist, shoulder, and elbow joints. Performing wrist extension (WE) or wrist flexion (WF) controls the robot's wrist joint. Performing radial deviation (RD) or ulnar deviation (UD) opens or closes the gripper. By default, the launchfile sends out MoveIt commands at 50Hz while the commands are dependent on arm movements in the past 0.5 seconds. When the upper biceps are activated, control gains of waist, shoulder, and elbow joints are lowered to enable more precise control. 
+    * The robot first starts at HOME position. Moving the arm controls the robot's waist, shoulder, and elbow joints. Performing wrist extension (WE) or wrist flexion (WF) controls the robot's wrist joint. Performing radial deviation (RD) or ulnar deviation (UD) opens or closes the gripper. By default, the launch file sends out MoveIt commands at 50Hz while the commands are dependent on arm movements in the past 0.5 seconds. When the upper biceps are activated, control gains of waist, shoulder, and elbow joints are lowered to enable more precise control. 
         ```
         roslaunch arm_control control_robot.launch use_actual:=true 
         ```
