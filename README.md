@@ -27,7 +27,8 @@ The goal of this project is to control a PincherX 100 Robot Arm using two Myo ar
     * Below is an image displaying the controllable joints on PincherX 100 and a table explaining the control scheme. The angles mentioned are radian differences between previous and current readings. To improve the performance of classifying hand gestures, the predictions are recorded in a period and a dominant gesture (one that exists in 90% of the recording) is found before asking the package to generate commands. Similarly, the command angles sent to the robot are sums of the data recorded during the same period. 
     <img src="demo/control_scheme.png" height="300" alt="control_scheme">   
     <br>
-    ![control_scheme](demo/control_scheme_table.png)
+
+    <img src="demo/control_scheme_table.png" alt="control_scheme_table">   
 
 ## Instructions
 1. `connect_myo`
