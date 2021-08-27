@@ -41,7 +41,7 @@ class Handler:
         the robot should not move. 
         """
         try:
-            (trans, rot) = self.listener.lookupTransform('myo_raw', 'body', rospy.Time(0))
+            (trans, rot) = self.listener.lookupTransform('world', 'body', rospy.Time(0))
             self.last_waist_rpy = self.current_waist_rpy
             if self.current_waist_rpy is None:
                 self.last_waist_rpy = euler_from_quaternion((rot[0], rot[1], rot[2], rot[3]))

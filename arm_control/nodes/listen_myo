@@ -38,7 +38,7 @@ class Handler:
         self.lower_rpy = None
         self.upper_rpy = None
         
-        self.thresh = 3.14/1.5          # tresh = positioned (at T shaped) - relaxed
+        self.thresh = 0         # tresh = positioned (at T shaped) - relaxed
         self.positioned_rpy = None
         self.relaxed_rpy = None
 

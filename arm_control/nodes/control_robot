@@ -30,9 +30,9 @@ import rospy
 import enum
 import numpy as np
 import moveit_commander
-from geometry_msgs.msg import PoseStamped, Pose
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray, Int16
 from interbotix_xs_sdk.msg import JointGroupCommand, JointSingleCommand
 from moveit_msgs.msg import DisplayTrajectory
 
@@ -71,7 +71,7 @@ class Handler:
         self.tf_waist = []
         self.tf_shoulder = []
         self.tf_elbow = []
-        self.gest = Pose.REST               # gesture predicted by the default classifier 
+        # self.gest = Pose.REST               # gesture predicted by the default classifier 
         self.tmp_pred = []
         self.current_pred = MyoPred.REST    # gesture predicted by the long-term myo classifier 
 
@@ -92,6 +92,8 @@ class Handler:
         current_joints = self.group.get_current_joint_values()
         self.last_target = current_joints.copy()
 
+        self.gripper_group.set_named_target("Open")
+        self.gripper_group.go(wait=True)
         # add table in rviz for collision detection
         self.add_table()
 
@@ -100,27 +102,29 @@ class Handler:
         self.single_cmd_pub = rospy.Publisher('px100/commands/joint_single', JointSingleCommand, queue_size = 1)
         self.jonit_sub = rospy.Subscriber("px100/joint_states", JointState, self.joint_callback)
         # self.gest_sub = rospy.Subscriber('myo_lower/myo_gest', Int16, self.gest_callback)
-        # self.pred_sub = rospy.Subscriber('myo_lower/myo_pred', Int16, self.pred_callback)
+        self.pred_sub = rospy.Subscriber('myo_lower/myo_pred', Int16, self.pred_callback)
         self.rest_bicep_sub = rospy.Subscriber('myo_upper/rest_bicep', Bool, self.rest_bicep_callback)
         self.tf_rpy_sub = rospy.Subscriber('tf_rpy', Float32MultiArray, self.tf_rpy_callback)
 
         rospy.Timer(rospy.Duration(1/self.cmd_freq), self.pub_cmd) 
 
-    # def gest_callback(self, data):
-    #     """ Callback function for gesture predicted by the default myo classifier
-    #     If hand is not at rest, then switch to publishing single joint or gripper command. 
+    """
+    def gest_callback(self, data):
+        " Callback function for gesture predicted by the default myo classifier
+        If hand is not at rest, then switch to publishing single joint or gripper command. 
 
-    #         Args:
-    #             data (Int16) - gesture index; refer to class Pose for details
-    #     """
-    #     # print("myo_lower gest = ", Pose(data.data))
-    #     # print("name = ", self.joint_state_name)
+            Args:
+                data (Int16) - gesture index; refer to class Pose for details
+        "
+        # print("myo_lower gest = ", Pose(data.data))
+        # print("name = ", self.joint_state_name)
 
-    #     self.gest = Pose(data.data)
-    #     if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
-    #         self.pub_group_cmd = True
-    #     else: 
-    #         self.pub_group_cmd = False
+        self.gest = Pose(data.data)
+        if self.gest == Pose.REST or self.gest == Pose.UNKNOWN:
+            self.pub_group_cmd = True
+        else: 
+            self.pub_group_cmd = False
+    """
     
     def check_joint_limits(self, target):
         """ Helper function for limiting joint commands within the robot's ranges
@@ -191,7 +195,7 @@ class Handler:
                 cmd_msg = JointSingleCommand()
                 cmd_msg.name = self.joint_state_name[3]
                 print("JS = ", self.joint_state)
-                cmd_msg.cmd = self.joint_state[3] + 0.1*k
+                cmd_msg.cmd = self.joint_state[3] + 0.2*k
                 print("command = ", cmd_msg)
                 self.single_cmd_pub.publish(cmd_msg)
             elif self.current_pred == MyoPred.UD:

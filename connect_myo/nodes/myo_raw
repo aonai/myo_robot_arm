@@ -215,7 +215,7 @@ class Handler:
         """
         if self.gest_val is not None:
             names = ['REST', 'FIST', 'WAVE_IN', 'WAVE_OUT', 'FINGERS_SPREAD', 'THUMB_TO_PINKY', 'UNKNOWN']
-            print("gest = ", self.gest_val, ' ', )
+            print("gest = ", names[self.gest_val[1][1]])
             msg = Int16()
             msg.data = self.gest_val[1][1]  # myo bluetooth config for classifier is type, val, xdir, _, _, _
             myo_idx = self.gest_val[0]
